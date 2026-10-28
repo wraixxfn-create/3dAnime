@@ -1,0 +1,2 @@
+Per FBX: aprite il file .blend in Blender ed esportate File > Export > FBX
+Il modello è stato progettato per Blender 3.x/4.x/5.x
