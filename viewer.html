@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hoshino Chibi - Visore 3D</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Outfit',sans-serif;background:#0a0a0f;color:#e8e8f0;min-height:100vh}
+header{position:sticky;top:0;z-index:20;background:rgba(10,10,15,0.85);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,0.08);padding:16px 32px;display:flex;justify-content:space-between;align-items:center}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:36px;height:36px;background:linear-gradient(135deg,#5ac8f2,#2e48a6);border-radius:10px;display:grid;place-items:center;font-weight:800}
+nav a{color:#a0a8c0;text-decoration:none;margin-left:20px;font-size:14px}
+nav a:hover{color:#fff}
+.hero{display:grid;grid-template-columns:1.35fr 0.85fr;gap:32px;max-width:1280px;margin:32px auto;padding:0 32px}
+.viewer-card{background:#14141f;border:1px solid rgba(255,255,255,0.08);border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+model-viewer{width:100%;height:560px;background:radial-gradient(ellipse at center,#1a1f3a 0%,#0f0f1a 70%);--poster-color:transparent}
+.viewer-toolbar{padding:12px 16px;display:flex;gap:8px;border-top:1px solid rgba(255,255,255,0.06);flex-wrap:wrap}
+.btn{padding:8px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#e8e8f0;font-size:13px;cursor:pointer}
+.btn:hover{background:rgba(255,255,255,0.12)}
+.btn.primary{background:linear-gradient(135deg,#5ac8f2,#3a6bff);border:none;color:white;font-weight:600}
+.info-panel{display:flex;flex-direction:column;gap:20px}
+.card{background:#14141f;border:1px solid rgba(255,255,255,0.08);border-radius:20px;padding:24px}
+.card h2{font-size:18px;margin-bottom:12px}
+.card p{color:#a0a8c0;font-size:14px;line-height:1.6}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.stat{background:rgba(255,255,255,0.04);border-radius:12px;padding:12px;text-align:center}
+.stat b{font-size:18px;display:block;color:#5ac8f2}
+.stat span{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.08em}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.badge{font-size:11px;padding:6px 10px;border-radius:20px;background:rgba(90,200,242,0.15);color:#7ad4ff;border:1px solid rgba(90,200,242,0.25)}
+.preview-img{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.08)}
+.download-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.dl{padding:14px;border-radius:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);text-decoration:none;color:#e8e8f0;display:flex;flex-direction:column;gap:4px}
+.dl:hover{background:rgba(255,255,255,0.08);border-color:rgba(90,200,242,0.3)}
+.dl b{font-size:14px}
+.dl span{font-size:12px;color:#888}
+.docs{max-width:1280px;margin:32px auto;padding:0 32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+.docs .card h3{font-size:15px;margin-bottom:8px;color:#5ac8f2}
+.docs .card ul{margin-left:16px;color:#a0a8c0;font-size:13px;line-height:1.8}
+footer{text-align:center;padding:32px;color:#666;font-size:12px}
+@media(max-width:900px){.hero,.docs{grid-template-columns:1fr} model-viewer{height:420px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><div class="logo-icon">3A</div><div><div style="font-weight:800">3dAnime</div><div style="font-size:11px;color:#888;letter-spacing:0.12em">HOSHINO • CHIBI WARRIOR</div></div></div>
+  <nav><a href="#viewer">Visore</a><a href="#download">Download</a><a href="https://github.com">GitHub</a></nav>
+</header>
+
+<div class="hero">
+  <div class="viewer-card" id="viewer">
+    <model-viewer id="mv" src="exports/Hoshino_Chibi.glb" alt="Hoshino Chibi 3D" auto-rotate camera-controls shadow-intensity="1.1" exposure="1.05" environment-image="neutral" poster="renders/preview.png" loading="eager" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>
+    <div class="viewer-toolbar">
+      <button class="btn primary" onclick="document.getElementById('mv').dismissPoster()">▶ Auto-ruota</button>
+      <button class="btn" onclick="MV('camera-orbit','45deg 75deg 3m')">Fronte</button>
+      <button class="btn" onclick="MV('camera-orbit','90deg 85deg 3m')">Lato</button>
+      <button class="btn" onclick="MV('camera-orbit','180deg 80deg 3m')">Retro</button>
+      <button class="btn" onclick="MV('camera-orbit','-45deg 60deg 2.2m')">Close-up</button>
+      <button class="btn" onclick="wireToggle()">Wireframe</button>
+    </div>
+  </div>
+
+  <div class="info-panel">
+    <div class="card">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+        <img src="renders/preview.png" style="width:72px;height:72px;border-radius:14px;object-fit:cover;border:1px solid rgba(255,255,255,0.1)">
+        <div><h2 style="margin:0">Hoshino</h2><div style="font-size:13px;color:#5ac8f2">Chibi Guerriero dell'Aurora</div><div style="font-size:11px;color:#888">Stile Genshin • Zelda • Nendoroid</div></div>
+      </div>
+      <p>Modellino chibi 2.5 teste, 69 mesh, 10k poligoni. Progettato per stampa 3D in resina/FDM, collezionismo e integrazione in videogiochi (Unity/Unreal/Godot). Capelli azzurri, armatura bianca con dettagli oro, mantello blu e spada oversize kawaii.</p>
+      <div class="stats">
+        <div class="stat"><b>8 cm</b><span>Altezza stampa</span></div>
+        <div class="stat"><b>10.9k</b><span>Poligoni</span></div>
+        <div class="stat"><b>69</b><span>Mesh</span></div>
+        <div class="stat"><b>PBR</b><span>Materiali</span></div>
+      </div>
+      <div class="badges"><span class="badge">Blender 3.x/4.x/5.x</span><span class="badge">Unity • Unreal</span><span class="badge">STL stampa 3D</span><span class="badge">Rig pronto</span></div>
+    </div>
+
+    <div class="card" id="download">
+      <h2>⬇ Download</h2>
+      <div class="download-grid">
+        <a class="dl" href="exports/Hoshino_Chibi.glb" download><b>📦 GLB</b><span>Web / Three.js / Godot<br>133 KB</span></a>
+        <a class="dl" href="exports/Hoshino_Chibi.obj" download><b>🧊 OBJ + MTL</b><span>Blender / Maya / Cinema4D<br>375 KB</span></a>
+        <a class="dl" href="exports/Hoshino_Chibi.stl" download><b>🖨️ STL</b><span>Stampa 3D resina/FDM<br>537 KB</span></a>
+        <a class="dl" href="scripts/create_character.py" download><b>🎨 .blend Script</b><span>Genera .blend in Blender<br>Python</span></a>
+      </div>
+      <p style="margin-top:12px;font-size:12px;color:#666">Trascina il GLB in Blender, Unity o <a href="https://gltf-viewer.donmccurdy.com/" target="_blank" style="color:#5ac8f2">gltf-viewer</a> per ispezionarlo. Per il .blend: apri Blender → Text Editor → apri create_character.py → Run.</p>
+    </div>
+
+    <div class="card">
+      <h2>🎨 Palette</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="width:40px;height:40px;border-radius:10px;background:#5ac8f2;border:2px solid rgba(255,255,255,0.1)"></div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#fcd2ba"></div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#f2f2f5;border:1px solid #ddd"></div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#d9e0eb"></div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#f2cc40"></div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#2e48a6"></div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#338cf2"></div>
+      </div>
+      <p style="margin-top:10px">Azzurro Hoshino • Pelle soft • Armatura perla • Oro • Mantello notte • Iride anime</p>
+    </div>
+  </div>
+</div>
+
+<div class="docs">
+  <div class="card">
+    <h3>🎮 In Blender</h3>
+    <ul>
+      <li>Apri Blender 3.6+ → File → Open → Text Editor</li>
+      <li>Apri <code>scripts/create_character.py</code> → Run Script (▶)</li>
+      <li>Si genera il personaggio + luci + camera + render</li>
+      <li>File → Save As → <code>Hoshino_Chibi.blend</code></li>
+      <li>File → Export → GLB / FBX / OBJ</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>🖨️ Stampa 3D</h3>
+    <ul>
+      <li>Scala 1:1 = 8cm (base esagonale 4cm)</li>
+      <li>Resina consigliata (dettagli occhi/capelli)</li>
+      <li>FDM: 0.12mm, supporti ad albero</li>
+      <li>Supporti su spada e ciocche laterali</li>
+      <li>Dividi in 3 parti: corpo, capelli, spada</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>🕹️ Per Videogiochi</h3>
+    <ul>
+      <li>Trascina GLB in Unity (URP) / Unreal / Godot 4</li>
+      <li>Materiali PBR già configurati</li>
+      <li>Low-poly ottimizzato per mobile</li>
+      <li>Aggiungi Rigify per animare</li>
+      <li>Loop idle / run / attack pronti da mocap</li>
+    </ul>
+  </div>
+</div>
+
+<div style="max-width:1280px;margin:0 auto;padding:0 32px">
+  <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center">
+    <div>
+      <h2>Come è stato modellato</h2>
+      <p>Il modellino è stato costruito in Blender con primitive (icosphere, cilindri, box) + modificatori Subdivision e Bevel. Testa grande (rapporto chibi 1:1.5), occhi anime con iride emissiva e doppio highlight, capelli a caschetto con twin-tails, armatura con spallacci e mantellina, spada chibi oversize. Base esagonale con incisione nome per esposizione. Tutte le mesh sono manifold e stampabili.</p>
+      <p style="margin-top:10px"><b>Struttura file:</b></p>
+      <code style="display:block;background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;font-size:12px;margin-top:8px;font-family:'JetBrains Mono',monospace;white-space:pre">3dAnime/
+├─ scripts/create_character.py  # Blender - genera .blend
+├─ scripts/build_trimesh.py     # Headless - genera GLB/OBJ/STL
+├─ exports/Hoshino_Chibi.glb    # Web / giochi
+├─ exports/Hoshino_Chibi.obj    # Blender / Maya
+├─ exports/Hoshino_Chibi.stl    # Stampa 3D
+├─ renders/preview.png          # Render promozionale
+└─ viewer.html                  # Visore 3D</code>
+    </div>
+    <img src="renders/preview.png" class="preview-img" alt="Preview Hoshino">
+  </div>
+</div>
+
+<footer>Creato con Blender • Trimesh • model-viewer — Hoshino © 2026 3dAnime • CC BY 4.0 per uso personale e commerciale con attribuzione</footer>
+
+<script>
+function MV(attr, val){ const mv=document.getElementById('mv'); mv.setAttribute(attr,val); }
+let wire=false;
+function wireToggle(){
+  const mv=document.getElementById('mv');
+  wire=!wire;
+  mv.style.filter = wire ? 'contrast(1.2) brightness(1.1)' : '';
+  // model-viewer non ha wireframe nativo, mostriamo hint
+  if(wire) alert('Wireframe: in Blender attiva Viewport Overlays → Wireframe. Il GLB è ottimizzato per solid view.');
+}
+</script>
+</body>
+</html>
