@@ -223,64 +223,153 @@ def ring_body(name, sections, mat, steps=48):
     return mesh(name, verts, faces, mat)
 
 
-def hair_cap(mat):
-    """Calotta aperta sul viso, non una sfera che lo nasconde."""
-    rows, steps = 20, 64
-    center = (0, .03, 2.84)
-    rx, ry, rz = .93, .78, .98
-    verts = [(0, center[1], center[2] + rz)]
-    for j in range(1, rows + 1):
-        for i in range(steps):
-            phi = 2 * math.pi * i / steps
-            back = (math.sin(phi) + 1) / 2
-            limit = 1.16 + 1.12 * (back ** .75)
-            theta = limit * j / rows
-            verts.append((rx * math.sin(theta) * math.cos(phi),
-                          center[1] + ry * math.sin(theta) * math.sin(phi),
-                          center[2] + rz * math.cos(theta)))
-    faces = []
-    for i in range(steps):
-        faces.append((0, 1 + i, 1 + (i + 1) % steps))
-    for j in range(rows - 1):
-        for i in range(steps):
-            a = 1 + j * steps + i
-            b = 1 + j * steps + (i + 1) % steps
-            faces.append((a, a + steps, b + steps, b))
-    obj = mesh("Capelli_calotta", verts, faces, mat)
-    # La superficie ha spessore: si esporta anche il bordo inferiore.
-    solidify = obj.modifiers.new("Spessore", 'SOLIDIFY')
-    solidify.thickness = .035
-    return obj
+HAIR_CENTER = Vector((0, .03, 2.84))
+HAIR_RADIUS = Vector((.93, .78, .98))
 
 
-def strand(name, start, end, width, depth, mat, curve=0, back_cap=False):
-    """Ciocca affusolata con volume ellittico e punta chiusa."""
-    start, end = Vector(start), Vector(end)
-    rows, steps = 16, 16
+def hair_point(az, el, k=1.0):
+    """Punto sull'ellissoide dei capelli: az=0 davanti, el=0 sulla cima."""
+    az, el = math.radians(az), math.radians(el)
+    direction = Vector((math.sin(el) * math.sin(az),
+                        -math.sin(el) * math.cos(az),
+                        math.cos(el)))
+    return HAIR_CENTER + Vector((direction.x * HAIR_RADIUS.x,
+                                 direction.y * HAIR_RADIUS.y,
+                                 direction.z * HAIR_RADIUS.z)) * k
+
+
+def hair_normal(point):
+    """Normale dell'ellissoide, più affidabile della direzione dal centro."""
+    rel = point - HAIR_CENTER
+    return Vector((rel.x / HAIR_RADIUS.x ** 2,
+                   rel.y / HAIR_RADIUS.y ** 2,
+                   rel.z / HAIR_RADIUS.z ** 2)).normalized()
+
+
+def catmull_rom(points, samples):
+    """Curva morbida che passa per i punti di controllo."""
+    pts = [Vector(p) for p in points]
+    padded = [pts[0]] + pts + [pts[-1]]
+    segments = len(pts) - 1
+    out = []
+    per_segment = max(2, samples // segments)
+    for s in range(segments):
+        p0, p1, p2, p3 = padded[s], padded[s + 1], padded[s + 2], padded[s + 3]
+        for i in range(per_segment):
+            t = i / per_segment
+            out.append(.5 * ((2 * p1) + (-p0 + p2) * t
+                             + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t ** 2
+                             + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    out.append(pts[-1])
+    return out
+
+
+def hair_lock(name, keys, width, thickness, mat, samples=30, steps=16,
+              taper=3.4, tip=.03, sharp=2.6, root=.14, flare=0.0):
+    """Ciocca piatta e affusolata che aderisce alla calotta.
+
+    ``keys`` sono tuple (azimut, elevazione, distanza) sull'ellissoide dei
+    capelli, oppure vettori già pronti per ciocche fuori superficie (ahoge).
+    ``flare`` allontana la punta dalla calotta, per ciocche che si sollevano.
+    """
+    control = [k if isinstance(k, Vector) else hair_point(*k) for k in keys]
+    spine = catmull_rom(control, samples)
+    width, thickness = width / 2, thickness / 2
     verts, faces = [], []
-    for j in range(rows + 1):
-        t = j / rows
-        # Parte dalla calotta, si allarga e termina in una punta morbida.
-        center = start.lerp(end, t)
-        if back_cap:
-            # Le ciocche seguono la superficie della calotta invece di attraversarla.
-            radial = 1 - (center.x / .93) ** 2 - ((center.z - 2.84) / .98) ** 2
-            center.y = .03 + .78 * math.sqrt(max(.001, radial)) - .025
-        else:
-            center.y += curve * math.sin(math.pi * t)
-        profile = .025 + .975 * (math.sin(math.pi * t) ** .72) * (1 - .28 * t)
+    for j, point in enumerate(spine):
+        t = j / (len(spine) - 1)
+        before = spine[max(0, j - 1)]
+        after = spine[min(len(spine) - 1, j + 1)]
+        tangent = (after - before)
+        if tangent.length < 1e-6:
+            tangent = Vector((0, 0, -1))
+        tangent.normalize()
+        normal = hair_normal(point)
+        across = tangent.cross(normal)
+        if across.length < 1e-5:
+            across = tangent.cross(Vector((1, 0, 0)))
+        across.normalize()
+        normal = across.cross(tangent).normalized()
+        # Radice stretta, corpo pieno, punta affilata: profilo da ciocca anime.
+        profile = max(tip, (1 - t ** taper) ** .58) * (root + (1 - root) * min(1, t / .18))
+        point = point + normal * (flare * t ** 2)
         for i in range(steps):
             a = 2 * math.pi * i / steps
-            verts.append((center.x + width * profile * math.cos(a),
-                          center.y + depth * profile * math.sin(a), center.z))
-    for j in range(rows):
+            cos_a, sin_a = math.cos(a), math.sin(a)
+            # Sezione a superellisse: fronte piatto, non tubo.
+            cx = math.copysign(abs(cos_a) ** (2 / sharp), cos_a)
+            cy = math.copysign(abs(sin_a) ** (2 / sharp), sin_a)
+            offset = across * (width * profile * cx) + normal * (thickness * profile * cy)
+            verts.append(tuple(point + offset))
+    for j in range(len(spine) - 1):
         for i in range(steps):
             a = j * steps + i
             b = j * steps + (i + 1) % steps
             faces.append((a, a + steps, b + steps, b))
     faces.append(tuple(range(steps)))
-    faces.append(tuple(reversed([rows * steps + i for i in range(steps)])))
+    last = (len(spine) - 1) * steps
+    faces.append(tuple(reversed([last + i for i in range(steps)])))
     return mesh(name, verts, faces, mat)
+
+
+def smoothstep(value):
+    value = min(1.0, max(0.0, value))
+    return value * value * (3 - 2 * value)
+
+
+def hairline(az_deg):
+    """Bordo dei capelli in elevazione: alto sul viso, basso su lati e nuca."""
+    t = min(abs(az_deg), 180.0) / 180.0
+    return 66.0 + 44.0 * (t ** .72)
+
+
+def comb(az_deg, count, phase=0.0):
+    """Scanalatura periodica con valli nette e creste morbide, in [-1, 1]."""
+    a = math.radians(az_deg * count + phase)
+    wave = math.sin(a)
+    return math.copysign(abs(wave) ** .75, wave)
+
+
+def hair_shell(name, mat, rings=26, cols=144):
+    """Calotta unica con scanalature radiali e bordo anteriore a punte morbide.
+
+    Una sola superficie (poi solidificata) evita sia le ciocche-tubo staccate
+    sia l'effetto "a spicchi" di tante primitive affiancate.
+    """
+    verts = [tuple(HAIR_CENTER + Vector((0, 0, HAIR_RADIUS.z)))]
+    for j in range(1, rings + 1):
+        v = j / rings
+        for i in range(cols):
+            az = -180 + 360 * i / cols
+            # Bordo: punte più lunghe al centro del viso e sui lati.
+            base = hairline(az)
+            front = max(0.0, 1 - abs(az) / 86.0)
+            tips = 11.0 * (1 - comb(az, 6, 20) ** 2) ** 1.4 * (front ** .45)
+            sides = 4.0 * (1 - comb(az, 3, 40) ** 2) * smoothstep((abs(az) - 70) / 40) * (1 - smoothstep((abs(az) - 120) / 40))
+            # Anche la nuca chiude a punte, così il bordo non è un taglio netto.
+            back = 6.5 * (1 - comb(az, 9, 60) ** 2) ** 1.3 * smoothstep((abs(az) - 110) / 50)
+            el = (base + tips + sides + back) * v
+            # Volume: le scanalature si aprono scendendo verso il bordo.
+            k = 1.0 + .034 * comb(az, 13, 0) * (v ** 1.2) + .016 * comb(az, 26, 17) * (v ** 1.5)
+            k += .012 * comb(az, 6, 20) * (v ** 2)
+            k += .018 * (v ** 2.2)  # appena più volume verso le punte
+            point = hair_point(az, el, k)
+            verts.append(tuple(point))
+    faces = []
+    for i in range(cols):
+        faces.append((0, 1 + i, 1 + (i + 1) % cols))
+    for j in range(rings - 1):
+        for i in range(cols):
+            a = 1 + j * cols + i
+            b = 1 + j * cols + (i + 1) % cols
+            faces.append((a, a + cols, b + cols, b))
+    obj = mesh(name, verts, faces, mat)
+    solidify = obj.modifiers.new("Spessore", 'SOLIDIFY')
+    solidify.thickness = .05
+    solidify.offset = 1
+    subdiv = obj.modifiers.new("Superficie morbida", 'SUBSURF')
+    subdiv.levels = 1
+    return obj
 
 
 def build_head(m):
@@ -300,47 +389,71 @@ def build_head(m):
         sphere(f"Pupilla_{label}", (x, -.813, 2.793), (.069, .02, .115), m["Pupil"])
         sphere(f"Riflesso_occhio_{label}", (x - .043, -.832, 2.854), (.043, .015, .048), m["Highlight"], 24, 16)
         sphere(f"Riflesso_piccolo_{label}", (x + .048, -.826, 2.71), (.022, .012, .024), m["Highlight"], 20, 12)
-        # Palpebre e sopracciglia seguono la curvatura del viso.
+        # Le palpebre seguono la curvatura del viso.
+        # Niente sopracciglia: con la frangia sopra gli occhi non si vedono
+        # e da vicino sembravano spuntoni staccati dal viso.
         line(f"Palpebra_{label}", [(x - .22, -.69, 2.87), (x - .16, -.705, 2.99),
                                    (x, -.72, 3.04), (x + .16, -.705, 2.99),
                                    (x + .22, -.69, 2.87)], .022, m["EyeOutline"])
-        line(f"Ciglia_{label}", [(x + side * .16, -.705, 2.99),
-                                (x + side * .25, -.67, 3.02)], .016, m["EyeOutline"])
-        line(f"Sopracciglio_{label}", [(x - .16, -.687, 3.135), (x, -.705, 3.17),
-                                       (x + .16, -.687, 3.145)], .013, m["HairShadow"])
         sphere(f"Guancia_{label}", (side * .535, -.505, 2.48), (.078, .017, .032), m["Blush"], 24, 16)
     sphere("Naso", (0, -.696, 2.57), (.032, .022, .024), m["SkinShadow"], 24, 16)
     line("Sorriso", [(-.11, -.620, 2.385), (-.055, -.619, 2.365),
                      (0, -.616, 2.358), (.055, -.619, 2.365), (.11, -.620, 2.385)],
          .012, m["SkinShadow"])
 
-    hair_cap(m["Hair"])
-    bangs = [
-        ((-.43, -.35, 3.57), (-.72, -.51, 3.15), .175, .082, "HairMid"),
-        ((-.28, -.32, 3.68), (-.48, -.65, 3.11), .18, .10, "Hair"),
-        ((-.12, -.30, 3.74), (-.22, -.70, 3.09), .19, .11, "HairLight"),
-        (( .05, -.30, 3.75), ( .06, -.72, 3.10), .19, .11, "Hair"),
-        (( .22, -.32, 3.69), ( .36, -.67, 3.11), .18, .105, "HairMid"),
-        (( .40, -.33, 3.60), ( .63, -.53, 3.16), .17, .085, "Hair"),
-    ]
-    for i, (a, b, width, depth, color) in enumerate(bangs):
-        strand(f"Frangia_{i + 1:02}", a, b, width, depth, m[color], curve=-.075)
+    hair_shell("Capelli", m["Hair"])
+    # Frangia: poche ciocche larghe che si sovrappongono alla calotta e
+    # finiscono in punte nette. Insieme formano una massa, non tubi separati.
+    for keys, width, thickness, color, flare, taper in (
+        (((-30, 16, 1.02), (-36, 42, 1.05), (-43, 66, 1.075), (-47, 84, 1.10)),
+         .30, .085, "Hair", .03, 2.9),
+        (((-8, 12, 1.02), (-12, 40, 1.05), (-16, 65, 1.078), (-19, 88, 1.105)),
+         .34, .095, "Hair", .034, 3.0),
+        (((16, 14, 1.02), (22, 42, 1.05), (29, 67, 1.075), (34, 92, 1.10)),
+         .32, .09, "HairLight", .032, 2.9),
+        (((-54, 24, 1.02), (-64, 50, 1.045), (-74, 74, 1.07), (-80, 96, 1.095)),
+         .24, .075, "HairMid", .028, 2.8),
+        (((44, 22, 1.02), (54, 48, 1.045), (64, 72, 1.07), (70, 90, 1.09)),
+         .26, .08, "Hair", .03, 2.8),
+        (((-46, 40, 1.06), (-56, 62, 1.075), (-64, 84, 1.09), (-69, 100, 1.10)),
+         .15, .055, "HairShadow", .02, 3.0),
+        (((8, 44, 1.062), (12, 66, 1.078), (16, 90, 1.092)),
+         .16, .058, "HairMid", .018, 3.0),
+    ):
+        hair_lock("Ciocca_frangia", keys, width, thickness, m[color],
+                  samples=30, flare=flare, taper=taper, sharp=2.4)
+
+    # Ciocche laterali davanti alle orecchie: cornice del viso.
     for side in (-1, 1):
         label = 'S' if side < 0 else 'D'
-        strand(f"Capelli_laterali_{label}", (side * .72, -.22, 3.40),
-               (side * .82, -.36, 2.20), .19, .12, m["Hair"], -.05)
-        strand(f"Ciocca_laterale_{label}", (side * .87, .02, 3.35),
-               (side * 1.01, -.05, 2.27), .15, .13, m["HairMid"], -.02)
-        strand(f"Ciocca_posteriore_{label}", (side * .73, .40, 3.38),
-               (side * .82, .48, 2.16), .16, .12, m["HairShadow"])
-    # Nervature posteriori della calotta per una silhouette leggibile anche da dietro.
-    for i, x in enumerate((-.63, -.42, -.21, 0, .21, .42, .63)):
-        strand(f"Capelli_retro_{i}", (x * .65, .48, 3.53),
-               (x, .58, 2.28 + .10 * abs(x)), .145, .07,
-               m["Hair"] if i % 2 else m["HairMid"], back_cap=True)
-    # Una piccola stella dorata identifica il guerriero dell'aurora.
-    star("Fermaglio_stella", .69, -.585, 3.31, .105, m["GoldLight"], inner=.28)
-    sphere("Fermaglio_gemma", (.69, -.59, 3.31), (.028, .014, .028), m["Iris"])
+        hair_lock(f"Ciocca_laterale_{label}",
+                  [(side * 84, 38, 1.025), (side * 92, 70, 1.045),
+                   (side * 90, 100, 1.055), (side * 82, 126, 1.06)],
+                  .155, .07, m["Hair"], samples=38, flare=.01, taper=2.4)
+        hair_lock(f"Ciocca_guancia_{label}",
+                  [(side * 104, 44, 1.015), (side * 110, 76, 1.035),
+                   (side * 106, 104, 1.045), (side * 98, 124, 1.05)],
+                  .125, .055, m["HairMid"], samples=36, flare=.008, taper=2.6)
+
+    # Ahoge: ciuffo ribelle corto, firma tipica dei chibi.
+    hair_lock("Ahoge",
+              [Vector((0, .10, 3.62)), Vector((.01, .00, 3.84)),
+               Vector((.06, -.10, 3.99)), Vector((.20, -.16, 4.02)),
+               Vector((.30, -.13, 3.94))],
+              .15, .07, m["HairLight"], samples=30, taper=1.9, sharp=2.3, tip=.14)
+
+    # La stella dorata è appoggiata sopra una ciocca, non sospesa nel vuoto.
+    clip = hair_point(52, 46, 1.115)
+    normal = hair_normal(clip)
+    pin = star("Fermaglio_stella", 0, 0, 0, .13, m["GoldLight"], inner=.3)
+    pin.location = clip
+    pin.rotation_euler = (-normal).to_track_quat('Y', 'Z').to_euler()
+    gem = sphere("Fermaglio_gemma", tuple(clip + normal * .004), (.03, .022, .03), m["Iris"])
+    gem.rotation_euler = (-normal).to_track_quat('Y', 'Z').to_euler()
+    # Lo spillo attraversa le ciocche: la stella non resta sospesa e lo STL
+    # rimane un volume unico.
+    between("Fermaglio_spillo", tuple(clip - normal * .01),
+            tuple(hair_point(52, 46, .99)), .018, m["Gold"], edge=0)
 
 
 def cape_point(u, t):
@@ -594,8 +707,9 @@ def export_model(objects):
     materials = sorted({slot.material.name for obj in objects for slot in obj.material_slots if slot.material})
     info = {
         "name": "Hoshino - Chibi Guerriero dell'Aurora",
-        "version": 2,
+        "version": 3,
         "style": "Anime chibi, statuetta dell'aurora",
+        "hair": "Calotta unica scanalata con ciocche sovrapposte, punte a zigzag e ahoge.",
         "meshes": len(objects),
         "triangles": triangles,
         "materials": materials,

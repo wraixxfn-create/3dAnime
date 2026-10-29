@@ -1,13 +1,13 @@
 # Stampa 3D — Hoshino
 
-`exports/Hoshino_Chibi.stl` contiene il personaggio e la base, senza pavimento di studio. Le coordinate STL sono da interpretare in **millimetri**: il modello è alto **80 mm**, con ingombro approssimativo di **59 × 42 mm** inclusa la spada. Lo STL non contiene colori; per i materiali usa il GLB o la scena Blender.
+`exports/Hoshino_Chibi.stl` contiene il personaggio e la base, senza pavimento di studio. Le coordinate STL sono da interpretare in **millimetri**: il modello è alto **80 mm**, con ingombro approssimativo di **56 × 39 mm** inclusa la spada. Lo STL non contiene colori; per i materiali usa il GLB o la scena Blender.
 
 I componenti sono stati uniti con `scripts/prepare_stl.py`: il risultato è stato verificato come **un solo volume chiuso e orientato**. Questo controllo geometrico non sostituisce l'analisi dello slicer e non garantisce che ogni dettaglio sopravviva alla stampa.
 
 ## Prima di stampare
 
 1. Apri lo STL nel tuo slicer (per esempio Lychee, Chitubox, PrusaSlicer, Cura o Bambu Studio) e verifica che sia importato in mm, alto 80 mm.
-2. Ispeziona gli strati e i punti sottili: **spada, ciglia, ciocche e bordi dorati** potrebbero essere fragili o troppo piccoli per il tuo processo. Se necessario ingrandisci il modello o modifica e ispessisci i dettagli in Blender.
+2. Ispeziona gli strati e i punti sottili: **spada, ciglia, punte delle ciocche e bordi dorati** potrebbero essere fragili o troppo piccoli per il tuo processo. Se necessario ingrandisci il modello o modifica e ispessisci i dettagli in Blender.
 3. Aggiungi supporti agli sbalzi: in particolare lama, mani, capelli, bordi del mantello e sotto la base se l'orientamento scelto lo richiede. Controlla i supporti automaticamente proposti, non accettarli senza verifica.
 4. Orienta la figura in base alla stampante e alla resina o al filamento utilizzati; effettua una stampa di prova prima di una tiratura.
 

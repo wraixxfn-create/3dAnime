@@ -1,9 +1,10 @@
 {
   "name": "Hoshino - Chibi Guerriero dell'Aurora",
-  "version": 2,
+  "version": 3,
   "style": "Anime chibi, statuetta dell'aurora",
-  "meshes": 119,
-  "triangles": 105666,
+  "hair": "Calotta unica scanalata con ciocche sovrapposte, punte a zigzag e ahoge.",
+  "meshes": 109,
+  "triangles": 161946,
   "materials": [
     "Armor",
     "Base",
@@ -33,7 +34,7 @@
     "Skin",
     "SkinShadow"
   ],
-  "height_blender_units": 3.82,
+  "height_blender_units": 4.049,
   "height_mm_print": 80,
   "rig": "Modello statico, non riggato.",
   "exports": {
