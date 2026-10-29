@@ -32,7 +32,7 @@
         <p class="eyebrow"><span class="sparkle">✦</span> FIGURA N° 01 <span class="eyebrow-line"></span> AURORA COLLECTION</p>
         <h1 id="hero-title">Hoshino<span>.</span></h1>
         <p class="hero-subtitle">Il piccolo guerriero<br><em>dell’aurora.</em></p>
-        <p class="hero-description">Un grande cuore, una spada luminosa e un pizzico di magia. Incontra Hoshino, una statuetta chibi tutta da esplorare.</p>
+        <p class="hero-description">Un grande cuore, una spada luminosa e un pizzico di magia. Incontra Hoshino, una piccola statuetta chibi pronta per una grande avventura.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="#download">Scarica il modello <span aria-hidden="true">↘</span></a>
           <a class="text-link" href="#dettagli">Scopri i dettagli <span aria-hidden="true">↗</span></a>
@@ -45,7 +45,7 @@
         <p class="hero-footnote"><span></span> UN PERSONAGGIO, INFINITE STORIE</p>
       </div>
 
-      <div class="viewer-shell" id="viewer">
+      <div class="viewer-shell" id="viewer" aria-label="Visore 3D di Hoshino">
         <div class="viewer-stage">
           <div class="stage-top" aria-hidden="true">
             <span><i></i> FIGURE PREVIEW</span>
@@ -66,7 +66,7 @@
           <noscript><div class="no-script"><img src="renders/model_preview.png" alt="Render del modello Hoshino"><p>Attiva JavaScript per esplorare il modello in 3D.</p></div></noscript>
           <div class="stage-bottom" aria-hidden="true">
             <span>✧ &nbsp; IL GUERRIERO DELL’AURORA</span>
-            <span>TRASCINA PER RUOTARE</span>
+            <span>↔ &nbsp; TRASCINA PER RUOTARE</span>
           </div>
           <span class="viewer-status" id="viewer-status" role="status" aria-live="polite">Caricamento del modello 3D…</span>
         </div>
@@ -78,12 +78,17 @@
             <button type="button" data-view="back" aria-pressed="false" disabled>Retro</button>
           </div>
           <div class="viewer-tools" role="group" aria-label="Controlli del modello">
+            <button class="tool-button icon-button" id="zoom-out" type="button" disabled title="Riduci lo zoom" aria-label="Riduci lo zoom">−</button>
+            <button class="tool-button icon-button" id="zoom-in" type="button" disabled title="Aumenta lo zoom" aria-label="Aumenta lo zoom">+</button>
             <button class="tool-button rotation-button" id="rotate" type="button" aria-pressed="true" disabled title="Ferma la rotazione automatica">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65M20 4v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <span>Rotazione</span>
             </button>
             <button class="tool-button icon-button" id="reset" type="button" disabled title="Ripristina la vista" aria-label="Ripristina la vista">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9V4h5M20 15v5h-5M5 4l5 5m9 11-5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="tool-button icon-button" id="fullscreen" type="button" disabled title="Schermo intero" aria-label="Apri a schermo intero" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
         </div>
@@ -100,10 +105,16 @@
         <p>Ogni elemento è parte del modello 3D, dal riflesso negli occhi alla stella sul mantello.</p>
       </div>
       <div class="details-grid">
-        <figure class="render-card">
-          <img src="renders/model_back.png" alt="Render della vista posteriore di Hoshino, con mantello blu e stella dorata" loading="lazy">
-          <figcaption><span>01 / 02</span><span>VISTA POSTERIORE · RENDER DEL MODELLO</span><span>✦</span></figcaption>
-        </figure>
+        <div class="render-gallery">
+          <figure class="render-card">
+            <img id="gallery-image" src="renders/model_back.png" alt="Render della vista posteriore di Hoshino, con mantello blu e stella dorata" loading="lazy">
+            <figcaption><span id="gallery-count">01 / 02</span><span id="gallery-caption">VISTA POSTERIORE · RENDER DEL MODELLO</span><span>✦</span></figcaption>
+          </figure>
+          <div class="gallery-controls" role="group" aria-label="Viste dei render">
+            <span>ESPLORA I DETTAGLI <span aria-hidden="true">↗</span></span>
+            <div><button type="button" data-render="back" aria-pressed="true">Retro</button><button type="button" data-render="front" aria-pressed="false">Fronte</button></div>
+          </div>
+        </div>
         <div class="detail-content">
           <div class="detail-item"><span>01</span><div><h3>Uno sguardo che brilla</h3><p>Occhi anime a più livelli, un sorriso delicato e ciocche azzurre che incorniciano il viso.</p></div><span class="detail-star">✳</span></div>
           <div class="detail-item"><span>02</span><div><h3>Pronto all’avventura</h3><p>Armatura perla e oro, mantello blu e una spada sfaccettata, disegnati per raccontare la sua storia.</p></div><span class="detail-star">✳</span></div>
@@ -131,7 +142,7 @@
           <a class="download-card" href="exports/Hoshino_Chibi.stl" download><span class="file-icon">⬡</span><span class="download-arrow">↘</span><strong>STL</strong><small>STAMPA 3D · 80 MM</small><p>Un unico volume, da verificare nello slicer.</p><span class="download-label">SCARICA IL FILE <span>↗</span></span></a>
           <a class="download-card" href="exports/Hoshino_Chibi.blend" download><span class="file-icon">✳</span><span class="download-arrow">↘</span><strong>BLEND</strong><small>SCENA BLENDER</small><p>Personaggio, materiali e luci modificabili.</p><span class="download-label">SCARICA IL FILE <span>↗</span></span></a>
         </div>
-        <p class="print-note"><span>✦</span> Il modello è statico e non riggato. Per la stampa, controlla spessori e supporti nel tuo slicer. <a href="docs/STAMPA_3D.md">Guida alla stampa ↗</a></p>
+        <div class="download-note"><span class="note-icon" aria-hidden="true">✦</span><div><strong>Una nota prima di iniziare</strong><p>Il modello è statico e non riggato. Per la stampa, controlla spessori e supporti nel tuo slicer. <a href="docs/STAMPA_3D.md">Guida alla stampa ↗</a></p></div></div>
       </div>
     </section>
   </main>

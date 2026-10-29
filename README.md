@@ -14,7 +14,7 @@ Avvia un piccolo server dalla cartella del progetto:
 python3 -m http.server 8000
 ```
 
-Apri **http://localhost:8000/** oppure `viewer.html` attraverso il server. Il visore funziona con un browser moderno e WebGL: trascina per ruotare, usa la rotella o il pinch per ingrandire, oppure scegli Fronte, Lato e Retro. Il pulsante Rotazione avvia o ferma la rotazione automatica; Ripristina riporta alla vista iniziale. Libreria e font sono inclusi localmente, quindi non è necessario un CDN.
+Apri **http://localhost:8000/** oppure `viewer.html` attraverso il server. Il visore funziona con un browser moderno e WebGL: trascina per ruotare, usa la rotella o il pinch per ingrandire, oppure scegli Fronte, Lato e Retro. Il pulsante Rotazione avvia o ferma la rotazione automatica; i pulsanti + e − regolano lo zoom, Schermo intero amplia il visore dove supportato e Ripristina riporta alla vista iniziale. Nella sezione dettagli puoi anche alternare i render frontale e posteriore. Libreria e font sono inclusi localmente, quindi non è necessario un CDN.
 
 ![Render della vista posteriore del modello](renders/model_back.png)
 
