@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build Chibi Character con Trimesh (fallback senza Blender)
-Genera GLB / OBJ / STL reali + Blender script funzionante
-Compatibile con esecuzione headless
+Generatore legacy della prima versione approssimata (Trimesh).
+
+Non genera il modello attuale: la sorgente della versione 2 è
+create_character.py (Blender). Per evitare sovrascritture accidentali, gli
+export legacy sono sempre scritti in exports/legacy/.
 """
 import trimesh
 import numpy as np
@@ -12,10 +14,10 @@ from trimesh.visual.material import PBRMaterial
 from trimesh import Scene
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXPORTS = ROOT / "exports"
+EXPORTS = ROOT / "exports" / "legacy"
 RENDERS = ROOT / "renders"
 
-EXPORTS.mkdir(exist_ok=True)
+EXPORTS.mkdir(parents=True, exist_ok=True)
 RENDERS.mkdir(exist_ok=True)
 
 def mat_rgba(r,g,b,a=255):
@@ -368,7 +370,7 @@ def export_scene(scene):
 
     # Also export a single merged scene as glTF inspection
     # Save scene graph json
-    info_path = ROOT / "character_info.json"
+    info_path = EXPORTS / "character_info.json"
     import json
     info = {
         "name": "Hoshino - Chibi Guerriero dell'Aurora",
@@ -396,7 +398,7 @@ def export_scene(scene):
     print(f"✓ Info salvata: {info_path}")
 
 if __name__ == "__main__":
-    print("Costruzione personaggio Hoshino Chibi...")
+    print("Costruzione della versione legacy in exports/legacy/ (non è il modello v2)...")
     scene = build_scene()
     export_scene(scene)
     print("✓ Completato!")

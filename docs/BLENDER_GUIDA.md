@@ -1,119 +1,36 @@
-# Guida Blender — Hoshino Chibi
+# Blender — Hoshino
 
-Questa guida ti porta da zero al modellino completo in Blender.
+## Aprire la scena già pronta
 
-## Requisiti
+1. Installa **Blender 4.2 LTS o successivo**.
+2. Apri `exports/Hoshino_Chibi.blend` con **File → Open**.
+3. Nella collezione `HOSHINO - modello` trovi i singoli oggetti con nomi descrittivi e materiali modificabili. La collezione `STUDIO` contiene camera, luci e pavimento.
+4. Usa **Material Preview** per vedere i colori oppure premi **F12** per renderizzare dalla camera salvata.
+5. Salva una copia della scena prima di modificare il personaggio.
 
-- Blender **3.6 LTS** o superiore (testato su 4.0, 4.2, 5.0)
-- OS: Windows / macOS / Linux
-- RAM: 4 GB minimo, 8 GB consigliati
+La scena è statica: non include rig, pesi o animazioni. La geometria contiene elementi sovrapposti, utile per modificare separatamente capelli, occhi, armatura e accessori; non è una singola mesh retopologizzata per l'animazione.
 
-## Installazione Blender
+## Ricostruire la scena
 
-1. Scarica da https://www.blender.org/download/
-2. Installa e avvia
+In Blender apri uno spazio **Scripting**, quindi nel Text Editor scegli **Open** e apri `scripts/create_character.py`. Premi **Run Script**: lo script sostituisce la scena corrente e costruisce Hoshino e lo studio. Senza opzioni non salva e non esporta automaticamente; usa **File → Save As** se vuoi conservarla.
 
-## Generare Hoshino
+> Attenzione: lo script inizia con una scena vuota. Salva prima eventuali lavori aperti.
 
-### Metodo 1 — Script (consigliato, 1 click)
+Per rigenerare anche i file inclusi nel progetto, dalla sua cartella:
 
-1. Apri Blender → File → New → General
-2. In alto, cambia un pannello in **Text Editor** (icona documento)
-3. `Text → Open` → seleziona `scripts/create_character.py`
-4. Clicca ▶ **Run Script**
-5. Il personaggio appare con luci e camera già configurate
-6. Premi `Numpad 0` per vedere dalla camera, `F12` per render
-
-### Metodo 2 — Import GLB
-
-1. `File → Import → glTF 2.0 (.glb/.gltf)` → seleziona `exports/Hoshino_Chibi.glb`
-2. Materiali PBR già presenti
-3. Scala 1:1 corretta
-
-## Struttura mesh generate
-
-- **Head** (1.0, 0.95, 0.95) + Subsurf 2 + ears, nose, blush
-- **Eyes** ×2: EyeWhite, Iris (emissiva), Pupil, 2 highlights, Brow torus
-- **Hair**: Hair_Top, Bangs ×3, Side ×2 + Strand, Back, Twin ×2 + Ribbon, Highlight
-- **Body**: Body cylinder, Belt torus, Buckle, ShoulderPad ×2 + Rim, Cape
-- **Limbs**: Arm ×2, Hand ×2, Finger ×6, Leg ×2, Boot ×2, Sole ×2
-- **Sword**: Blade box, Tip cone, Guard, Handle cylinder, Pommel sphere
-- **Base**: Platform esagono (6 vertici), Rim, Rock ×3, Text3D "HOSHINO"
-- **Env**: Camera 50mm, Sun Key/Fill/Rim, Ground shadow catcher, World bianco
-
-## Materiali (Principled BSDF)
-
-Tutti i materiali usano **Principled BSDF** con Base Color, Roughness, Metallic.
-- Iris ha Emission Strength 0.3 per effetto anime brillante
-- Blush ha blend_method = BLEND per trasparenza
-- Armor Gold ha Metallic 0.7
-
-## Modificatori usati
-
-- **Subdivision Surface** (livelli 2) su Head, Body, Hair
-- **Bevel** (width 0.02-0.08) su Bangs, BeltBuckle, Sole per ammorbidire spigoli
-- **Mirror** potenziale per simmetria (se vuoi modellare da zero)
-
-## Luci e Camera
-
-- Camera: loc (2.2, -3.2, 1.3), rot (75°,0,35°), lens 50mm
-- Key Sun: (3,-3,4) energy 6.0 warm
-- Fill Sun: (-2,-2,3) energy 2.5 cool
-- Rim Sun: (0,3,2) energy 3.0
-- Ground Plane 10×10 con `is_shadow_catcher = True`
-
-## Render
-
-- Engine: `BLENDER_EEVEE_NEXT` (Blender 4.2+) o `BLENDER_EEVEE` o fallback `CYCLES`
-- Risoluzione 2048×2048, film_transparent = True
-- EEVEE: samples 64, soft_shadows True, bloom True (intensity 0.15)
-
-Il script salva automaticamente:
-- `Hoshino_Chibi.blend` nella root
-- `exports/*.fbx, *.glb, *.obj, *.stl`
-- `renders/preview.png` e `preview_closeup.png`
-
-## Personalizzazione
-
-### Cambiare colore capelli
-
-Nel file script, cerca `create_materials()`:
-```python
-mats["Hair"] = new_material("Hair", (0.35, 0.78, 0.95, 1.0), roughness=0.5)
-# Prova rosa: (0.95, 0.55, 0.75, 1.0)
-# Prova biondo: (0.95, 0.85, 0.40, 1.0)
+```bash
+blender --background --python scripts/create_character.py -- --export --render --save-blend
+python3 -m pip install -r requirements-model.txt
+python3 scripts/prepare_stl.py
 ```
 
-### Cambiare altezza
+`--export` riscrive GLB, OBJ/MTL, ZIP OBJ e STL; `--render` genera `renders/model_preview.png` e `renders/model_back.png`; `--save-blend` salva `exports/Hoshino_Chibi.blend`. Aggiungi `--quick` per render di prova. L'ultimo comando unisce i volumi dello STL: è necessario ripeterlo ogni volta che lo script Blender rigenera lo STL.
 
-Modifica scala Head:
-```python
-head.scale = (1.0, 0.95, 0.95)  # prova (1.1, 1.0, 1.0) per testa più grande
-```
+## Esportare a mano
 
-### Aggiungere Rig per animazione
+- **GLB**: seleziona solo gli oggetti della collezione del modello e usa **File → Export → glTF 2.0**, abilitando *Selected Objects*. Mantiene i materiali PBR.
+- **OBJ**: esporta gli stessi oggetti e conserva il file `.mtl` accanto all'`.obj`.
+- **FBX**: seleziona solo il modello e usa **File → Export → FBX**, con *Selected Objects*. Per animarlo occorre prima creare un rig.
+- **STL**: usa la pipeline sopra per ottenere lo STL scalato a 80 mm e unito. Un export manuale dalla scena Blender non è automaticamente un singolo volume e richiede una verifica della scala.
 
-1. Genera il modello con lo script
-2. Seleziona il Body → `Object → Add → Armature → Human (Meta-Rig)` con Rigify addon
-3. Scala armature per contenere il chibi
-4. Seleziona mesh → Shift-seleziona armature → `Ctrl+P → With Automatic Weights`
-5. Entra in Pose Mode e anima
-
-### Esportare per stampa 3D
-
-- Seleziona tutto (`A`)
-- `File → Export → Stl (.stl)` → spunta “Apply Modifiers”
-- Scala: 0.08 = 8 cm (se vuoi 1 unità = 1 metro)
-
-## Troubleshooting
-
-- **SyntaxError: keyword argument repeated: scale** → già corretto in questa versione
-- **ImportError: libXrender.so.1** → Blender va eseguito con GUI, non headless via pip bpy. Usa `scripts/build_trimesh.py` per headless
-- **Mesh nere in render** → Normals: `Object → Shade Smooth` già applicato
-- **Occhi spenti** → aumenta Emission Strength di Iris a 0.5
-
-## Risorse
-
-- [Blender Manual](https://docs.blender.org/manual/en/latest/)
-- [EEVEE Render](https://docs.blender.org/manual/en/latest/render/eevee/index.html)
-- [PBR Materials](https://docs.blender.org/manual/en/latest/render/shader_nodes/shader/principled.html)
+I render `model_preview.png` e `model_back.png` provengono dalla scena reale. `preview.png` e `turnaround.png` sono invece immagini di riferimento della versione precedente, non render degli export attuali.
