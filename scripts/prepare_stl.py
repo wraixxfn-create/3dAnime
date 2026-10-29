@@ -53,6 +53,10 @@ def prepare(path):
             continue
         if len(part.faces) == 2 and set(part.faces[0]) == set(part.faces[1]):
             continue
+        # Frammenti a volume nullo e minuscoli: residui numerici dell'unione
+        # booleana e della conversione in float32, non geometria stampabile.
+        if abs(float(part.volume)) < 1e-3 and float(max(part.extents)) < 1.0:
+            continue
         solids.append(part)
     if len(solids) != 1 or not solids[0].is_volume:
         raise ValueError(f"L'unione contiene {len(solids)} componenti sostanziali; controlla le parti scollegate.")

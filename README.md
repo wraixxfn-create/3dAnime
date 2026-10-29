@@ -1,6 +1,6 @@
 # Hoshino — il guerriero dell'aurora
 
-Una statuetta 3D anime/chibi con capelli azzurri, armatura perla e oro, mantello blu e spada. Questa versione rinnova il personaggio e il visore: il viso è finalmente visibile, i capelli sono modellati a ciocche e i dettagli sono presenti anche sul retro.
+Una statuetta 3D anime/chibi con capelli azzurri, armatura perla e oro, mantello blu e spada. Questa versione rinnova il personaggio, il visore e soprattutto la capigliatura: una calotta unica con scanalature morbide, ciocche larghe che si sovrappongono sulla frangia, punte leggibili anche sul retro e un *ahoge* in cima.
 
 ![Render del modello 3D aggiornato di Hoshino](renders/model_preview.png)
 
@@ -30,7 +30,7 @@ Apri **http://localhost:8000/** oppure `viewer.html` attraverso il server. Il vi
 
 Anche l'[OBJ](exports/Hoshino_Chibi.obj) e il suo [MTL](exports/Hoshino_Chibi.mtl) sono disponibili separatamente: vanno tenuti nella stessa cartella. Per FBX apri il `.blend` e usa l'export di Blender.
 
-Il modello a colori contiene **119 oggetti mesh e 105.666 triangoli**. È statico, **non riggato e non animato**. I file GLB e OBJ usano la scala della scena Blender (altezza 3,82 unità); lo STL viene invece esportato in millimetri, con altezza 80 mm. Il pavimento e le luci dello studio non sono inclusi negli export del personaggio.
+Il modello a colori contiene **109 oggetti mesh e 161.946 triangoli**. È statico, **non riggato e non animato**. I file GLB e OBJ usano la scala della scena Blender (altezza 4,05 unità); lo STL viene invece esportato in millimetri, con altezza 80 mm. Il pavimento e le luci dello studio non sono inclusi negli export del personaggio.
 
 ## Aprire o modificare in Blender
 
