@@ -1,105 +1,34 @@
-# Stampa 3D — Hoshino Chibi
+# Stampa 3D — Hoshino
 
-Guida completa per stampare il modellino su stampante a resina (SLA/MSLA) e a filamento (FDM).
+`exports/Hoshino_Chibi.stl` contiene il personaggio e la base, senza pavimento di studio. Le coordinate STL sono da interpretare in **millimetri**: il modello è alto **80 mm**, con ingombro approssimativo di **59 × 42 mm** inclusa la spada. Lo STL non contiene colori; per i materiali usa il GLB o la scena Blender.
 
-## File
+I componenti sono stati uniti con `scripts/prepare_stl.py`: il risultato è stato verificato come **un solo volume chiuso e orientato**. Questo controllo geometrico non sostituisce l'analisi dello slicer e non garantisce che ogni dettaglio sopravviva alla stampa.
 
-- `exports/Hoshino_Chibi.stl` — STL manifold, stampabile direttamente
-- `exports/Hoshino_Chibi.obj` — con materiali, utile per preview a colori
-- Scala nativa: altezza ~8 cm, base esagonale ~4 cm
+## Prima di stampare
 
-## Controllo prima di stampare
+1. Apri lo STL nel tuo slicer (per esempio Lychee, Chitubox, PrusaSlicer, Cura o Bambu Studio) e verifica che sia importato in mm, alto 80 mm.
+2. Ispeziona gli strati e i punti sottili: **spada, ciglia, ciocche e bordi dorati** potrebbero essere fragili o troppo piccoli per il tuo processo. Se necessario ingrandisci il modello o modifica e ispessisci i dettagli in Blender.
+3. Aggiungi supporti agli sbalzi: in particolare lama, mani, capelli, bordi del mantello e sotto la base se l'orientamento scelto lo richiede. Controlla i supporti automaticamente proposti, non accettarli senza verifica.
+4. Orienta la figura in base alla stampante e alla resina o al filamento utilizzati; effettua una stampa di prova prima di una tiratura.
 
-Apri lo STL in:
-- **Chitubox** / **Lychee Slicer** (resina)
-- **PrusaSlicer** / **Cura** / **Bambu Studio** (FDM)
-- Verifica: nessun buco, tutto manifold ✔ (già garantito)
+Per dettagli così piccoli è generalmente preferibile la **resina**. Con FDM potrebbe essere necessario aumentare la scala o semplificare i dettagli. Le impostazioni di esposizione, layer, temperatura, lavaggio e polimerizzazione dipendono dal materiale: segui sempre le indicazioni del produttore e usa protezioni e ventilazione adeguate.
 
-## Resina (consigliata — massima qualità)
+## Cambiare dimensione
 
-### Impostazioni
-- Layer: 0.05 mm (0.03 mm per ultra-dettaglio volto)
-- Esposizione: secondo la tua resina (es. 2.2s per Anycubic Standard)
-- Bottom exposure: 30s × 4 layer
-- Lift: 6 mm, velocità 60 mm/min
-- Orientamento: **15° inclinato all'indietro**, base a contatto con piatto
-- Supporti: leggeri (light) su:
-  - Punta della spada
-  - Ciocche laterali dei capelli
-  - Bordo inferiore del mantello
-  - Sotto la base (opzionale, rimovibili)
+Partendo dal file a 80 mm:
 
-### Post-produzione
-1. Stacca dal piatto con spatola
-2. Lava in IPA 99% per 4 min (agita)
-3. Rimuovi supporti con tronchesino (prima del curing è più facile)
-4. Curing UV 2-3 min per lato (non sovraesporre, ingiallisce)
-5. Carteggia leggermente la base con 800 grit
+- 60 mm: scala al 75% (i dettagli diventano ancora più delicati).
+- 100 mm: scala al 125%.
+- 150 mm: scala al 187,5%.
 
-### Pittura (opzionale ma consigliata)
+Lo STL è un singolo volume: capelli e spada **non sono già separati**. Per stampare parti separate occorre modificarle o dividerle, aggiungendo eventualmente giunzioni, in Blender o in un software di modellazione adatto.
 
-Palette ufficiale:
-- **Capelli**: base `#5AC8F2`, ombra `#3873BF` (wash), highlight `#C0EBFF` (dry brush)
-- **Pelle**: `#FCD2BA` + blush `#FF8CA5` sulle guance (aerografo leggero)
-- **Armatura**: perla `#D9E0EB` + oro `#F2CC40` (bordo dorato con pennello fine 00)
-- **Mantello**: `#2E48A6` + highlight `#4A6BFF`
-- **Occhi**: bianco + iride `#338CF2` + pupilla nera + doppio punto bianco highlight
-- **Spada**: lama argento `#D9E0EB` metallico, elsa oro, impugnatura marrone `#592E1A`
+## Ricreare lo STL
 
-Primer: bianco o grigio chiaro. Acrilici Vallejo / Citadel / Tamiya.
+```bash
+blender --background --python scripts/create_character.py -- --export
+python3 -m pip install -r requirements-model.txt
+python3 scripts/prepare_stl.py
+```
 
-## FDM (filamento)
-
-### Impostazioni
-- Layer: 0.12 mm (0.08 mm per dettagli volto)
-- Nozzle: 0.4 mm (0.2 mm per ultra-dettaglio)
-- Velocità: 45 mm/s (30 mm/s per top layer)
-- Supporti: **Tree / Albero** — solo su spada e capelli
-- Riempimento: 15% gyroid
-- Materiale: PLA Silk bianco (ottimo per pittura) o PLA+ per resistenza
-- Temperatura: 205°C (PLA), piatto 60°C
-
-### Orientamento
-- Come per resina: 10-15° all'indietro
-- Base piatta sul piatto → non servono supporti sotto la base
-
-### Post-produzione
-1. Rimuovi supporti con pinza
-2. Leviga con carta 400→800 grit dove serve
-3. Primer filler per nascondere layer lines sul viso
-4. Pittura come per resina
-
-## Divisione in parti (consigliato per FDM)
-
-Per evitare supporti interni, dividi in 3 parti con Meshmixer / PrusaSlicer:
-
-1. **Corpo + testa + base** (stampa verticale)
-2. **Capelli twin-tails** (stampa separata, incolla con cianoacrilato)
-3. **Spada** (stampa orizzontale, incolla alla mano)
-
-In Blender, puoi separare: seleziona mesh capelli → `P` → By Loose Parts.
-
-## Scala
-
-Il file è già in scala 1:1 = 8 cm.
-
-- Per 10 cm: scala 125% (10 / 8 = 1.25)
-- Per 6 cm (keychain): scala 75% — usa resina, FDM perderà dettagli occhi
-- Per 15 cm (statua): scala 187.5% — aumenta spessore spada se stampi FDM
-
-## Costi indicativi
-
-- Resina: ~15 ml → ~0.50 € + IPA
-- FDM PLA: ~18 g → ~0.40 €
-- Tempo: resina 2.5h, FDM 4-5h a 0.12 mm
-
-## Sicurezza
-
-- Resina: guanti nitrile, occhiali, ambiente ventilato. Non toccare resina liquida a mani nude
-- FDM: attenzione a piatto caldo (60°C)
-
-## Foto del risultato
-
-Il render in `renders/preview.png` è il target. Con pittura accurata puoi ottenere lo stesso effetto Nendoroid.
-
-Buona stampa! 🖨️✨
+L'export Blender iniziale contiene volumi sovrapposti; lo script `prepare_stl.py` li unisce, verifica che il risultato sia un volume singolo e mantenga l'altezza di 80 mm, e sostituisce il file solo dopo i controlli. Se la geometria viene modificata e sono presenti parti scollegate, lo script si ferma senza sovrascrivere il file: correggi le intersezioni in Blender e riprova. È comunque necessario controllare lo spessore e i supporti nello slicer.

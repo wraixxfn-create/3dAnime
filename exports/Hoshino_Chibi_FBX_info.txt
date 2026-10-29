@@ -1,2 +1,2 @@
-Per FBX: aprite il file .blend in Blender ed esportate File > Export > FBX
-Il modello è stato progettato per Blender 3.x/4.x/5.x
+Per ottenere un FBX, apri exports/Hoshino_Chibi.blend in Blender 4.2 o successivo, seleziona gli oggetti della collezione HOSHINO - modello e usa File > Export > FBX con Selected Objects.
+Il personaggio è statico: un rig e le animazioni vanno creati separatamente.

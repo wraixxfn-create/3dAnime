@@ -1,695 +1,679 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Hoshino: statuetta chibi procedurale e scena studio.
+
+Eseguire in Blender 4.2+ (o con il modulo Python ``bpy``):
+    blender --background --python scripts/create_character.py -- --export --render --save-blend
+
+Senza opzioni lo script costruisce la scena, utile nel Text Editor di Blender.
+Gli export includono solo il personaggio; il pavimento e le luci restano nella
+scena di rendering. Lo STL è scalato a 80 mm di altezza (unità STL in mm).
 """
-Modellino 3D Chibi Anime - Personaggio Videogioco
-Stile: Hoshino - Chibi Guerriero dell'Aurora
-Ispirato a Genshin / Zelda / Ni no Kuni
-Compatibile bpy 4.x / 5.x
-"""
-import bpy
+
+import argparse
+import json
 import math
-import mathutils
+import sys
+import zipfile
 from pathlib import Path
 
+import bpy
+from mathutils import Vector
 
-# --------------------------------------------------
-# UTILS
-# --------------------------------------------------
-def clear_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    # Rimuove tutto
-    for obj in list(bpy.data.objects):
-        bpy.data.objects.remove(obj, do_unlink=True)
 
-def new_material(name, base_color, roughness=0.6, metallic=0.0, emission_strength=0.0):
-    mat = bpy.data.materials.new(name=name)
+def project_root():
+    # In Blender il Text Editor può eseguire il codice senza un __file__ valido.
+    try:
+        candidate = Path(__file__).resolve().parent.parent
+        if (candidate / "viewer.html").exists():
+            return candidate
+    except NameError:
+        pass
+    return Path.cwd()
+
+
+ROOT = project_root()
+
+
+def srgb(hex_color):
+    """Interpreta una tinta esadecimale sRGB come colore lineare Blender."""
+    rgb = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return tuple(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb) + (1,)
+
+
+def material(name, color, roughness=0.4, metallic=0.0):
+    mat = bpy.data.materials.new(name)
+    mat.diffuse_color = srgb(color)
     mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-    nodes.clear()
-    out = nodes.new("ShaderNodeOutputMaterial")
-    out.location = (300, 0)
-    princ = nodes.new("ShaderNodeBsdfPrincipled")
-    princ.location = (0, 0)
-    # Colore base
-    princ.inputs["Base Color"].default_value = base_color
-    princ.inputs["Roughness"].default_value = roughness
-    if "Metallic" in princ.inputs:
-        princ.inputs["Metallic"].default_value = metallic
-    # Emission per occhi
-    if emission_strength > 0:
-        if "Emission Strength" in princ.inputs:
-            princ.inputs["Emission Strength"].default_value = emission_strength
-            if "Emission Color" in princ.inputs:
-                princ.inputs["Emission Color"].default_value = base_color
-    links.new(princ.outputs["BSDF"], out.inputs["Surface"])
+    principled = mat.node_tree.nodes.get("Principled BSDF")
+    principled.inputs["Base Color"].default_value = mat.diffuse_color
+    principled.inputs["Roughness"].default_value = roughness
+    principled.inputs["Metallic"].default_value = metallic
     return mat
 
-def shade_smooth(obj):
-    for poly in obj.data.polygons:
-        poly.use_smooth = True
 
-def add_subsurf(obj, levels=2):
-    mod = obj.modifiers.new("Subdivision", "SUBSURF")
-    mod.levels = levels
-    mod.render_levels = levels
+def make_materials():
+    definitions = {
+        "Skin": ("#F8C9B0", .5, 0),
+        "SkinShadow": ("#DC9F91", .55, 0),
+        "Blush": ("#F39DA4", .6, 0),
+        "Hair": ("#6AB9D8", .38, 0),
+        "HairLight": ("#8BCFE7", .38, 0),
+        "HairMid": ("#58A4CC", .4, 0),
+        "HairShadow": ("#3D80AE", .42, 0),
+        "EyeOutline": ("#263B55", .42, 0),
+        "EyeWhite": ("#F9FDFF", .22, 0),
+        "IrisDark": ("#176AA7", .25, 0),
+        "Iris": ("#2EA7D7", .25, 0),
+        "IrisLight": ("#83DCF1", .24, 0),
+        "Pupil": ("#132E4A", .25, 0),
+        "Highlight": ("#FFFFFF", .18, 0),
+        "Ivory": ("#F2F2EC", .42, 0),
+        "Armor": ("#D9E7ED", .32, .15),
+        "Gold": ("#D9AA55", .28, .55),
+        "GoldLight": ("#F0D18C", .27, .48),
+        "Cape": ("#244B82", .55, 0),
+        "CapeLight": ("#396DA6", .52, 0),
+        "Navy": ("#293D5D", .48, 0),
+        "Leather": ("#755447", .55, 0),
+        "Blade": ("#BCD4DF", .25, .55),
+        "BladeLight": ("#EAF5F6", .24, .48),
+        "BladeBlue": ("#4B99BF", .29, .32),
+        "Base": ("#E8EEF0", .48, 0),
+        "BaseTop": ("#F7F6F0", .5, 0),
+        "BaseShadow": ("#8299A7", .5, .12),
+        "Floor": ("#E5EFF2", .8, 0),
+    }
+    return {name: material(name, *args) for name, args in definitions.items()}
 
-def add_mirror(obj, axis='X'):
-    mod = obj.modifiers.new("Mirror", "MIRROR")
-    mod.use_axis[0] = axis == 'X'
-    mod.use_axis[1] = axis == 'Y'
-    mod.use_axis[2] = axis == 'Z'
 
-# --------------------------------------------------
-# MATERIALI
-# --------------------------------------------------
-def create_materials():
-    mats = {}
-    mats["Skin"] = new_material("Skin", (0.98, 0.82, 0.73, 1.0), roughness=0.7)
-    mats["SkinShadow"] = new_material("SkinShadow", (0.95, 0.75, 0.65, 1.0), roughness=0.8)
-    mats["Hair"] = new_material("Hair", (0.35, 0.78, 0.95, 1.0), roughness=0.5)  # azzurro anime
-    mats["HairDark"] = new_material("HairDark", (0.22, 0.45, 0.75, 1.0), roughness=0.6)
-    mats["HairLight"] = new_material("HairLight", (0.75, 0.92, 1.0, 1.0), roughness=0.4)
-    mats["EyeWhite"] = new_material("EyeWhite", (1.0, 1.0, 1.0, 1.0), roughness=0.2)
-    mats["Iris"] = new_material("Iris", (0.20, 0.55, 0.95, 1.0), roughness=0.3, emission_strength=0.3)
-    mats["Pupil"] = new_material("Pupil", (0.05, 0.05, 0.08, 1.0), roughness=0.3)
-    mats["EyeHighlight"] = new_material("EyeHighlight", (1.0, 1.0, 1.0, 1.0), roughness=0.1)
-    mats["Tunic"] = new_material("Tunic", (0.95, 0.95, 0.98, 1.0), roughness=0.8)
-    mats["Armor"] = new_material("Armor", (0.85, 0.88, 0.92, 1.0), roughness=0.35, metallic=0.3)
-    mats["ArmorGold"] = new_material("ArmorGold", (0.95, 0.80, 0.25, 1.0), roughness=0.4, metallic=0.7)
-    mats["Cape"] = new_material("Cape", (0.18, 0.28, 0.65, 1.0), roughness=0.9)
-    mats["Gloves"] = new_material("Gloves", (0.25, 0.25, 0.30, 1.0), roughness=0.7)
-    mats["Boots"] = new_material("Boots", (0.30, 0.22, 0.18, 1.0), roughness=0.8)
-    mats["SwordBlade"] = new_material("SwordBlade", (0.85, 0.90, 0.95, 1.0), roughness=0.2, metallic=0.8)
-    mats["SwordHandle"] = new_material("SwordHandle", (0.35, 0.18, 0.10, 1.0), roughness=0.8)
-    mats["Base"] = new_material("Base", (0.92, 0.92, 0.90, 1.0), roughness=0.9)
-    mats["BaseDark"] = new_material("BaseDark", (0.65, 0.70, 0.78, 1.0), roughness=0.8)
-    mats["Blush"] = new_material("Blush", (1.0, 0.55, 0.65, 1.0), roughness=0.8)
-    return mats
+def set_active_collection(collection):
+    layer = bpy.context.view_layer.layer_collection.children.get(collection.name)
+    if layer:
+        bpy.context.view_layer.active_layer_collection = layer
 
-# --------------------------------------------------
-# CREAZIONE PERSONAGGIO
-# --------------------------------------------------
-def create_head(mats):
-    # Testa - sfera grande stile chibi (rapporto 1:1.5)
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=0.95, location=(0, 0, 1.45))
-    head = bpy.context.active_object
-    head.name = "Head"
-    head.scale = (1.0, 0.95, 0.95)
-    bpy.ops.object.transform_apply(scale=True)
-    head.data.materials.append(mats["Skin"])
-    shade_smooth(head)
-    add_subsurf(head, 2)
 
-    # Guance blush
-    for x in [-0.38, 0.38]:
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.12, location=(x, 0.82, 1.25))
-        blush = bpy.context.active_object
-        blush.name = f"Blush_{'L' if x<0 else 'R'}"
-        blush.scale = (1.2, 0.4, 0.8)
-        bpy.ops.object.transform_apply(scale=True)
-        blush.data.materials.append(mats["Blush"])
-        shade_smooth(blush)
-        # trasparenza via alpha
-        blush.data.materials[0].blend_method = 'BLEND'
-        # Parent a testa
-        blush.parent = head
+def finish(obj, name, mat, smooth=True):
+    obj.name = name
+    if mat:
+        obj.data.materials.append(mat)
+    if obj.type == "MESH" and smooth:
+        for face in obj.data.polygons:
+            face.use_smooth = True
+    return obj
 
-    # Naso piccolo
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=0.06, location=(0, 0.90, 1.30))
-    nose = bpy.context.active_object
-    nose.name = "Nose"
-    nose.scale = (1, 0.5, 0.7)
-    bpy.ops.object.transform_apply(scale=True)
-    nose.data.materials.append(mats["SkinShadow"])
-    nose.parent = head
 
-    # Orecchie
-    for x in [-0.92, 0.92]:
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.20, location=(x, 0.0, 1.45))
-        ear = bpy.context.active_object
-        ear.name = f"Ear_{'L' if x<0 else 'R'}"
-        ear.scale = (0.4, 0.6, 1.0)
-        bpy.ops.object.transform_apply(scale=True)
-        ear.data.materials.append(mats["Skin"])
-        shade_smooth(ear)
-        ear.parent = head
+def sphere(name, location, scale, mat, segments=32, rings=20):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, location=location)
+    obj = bpy.context.object
+    obj.scale = scale
+    return finish(obj, name, mat)
 
-    # Orecchie a punta leggere (elfiche)
-        bpy.ops.mesh.primitive_cone_add(radius1=0.12, depth=0.25, location=(x*1.05, 0.0, 1.62))
-        tip = bpy.context.active_object
-        tip.name = f"EarTip_{'L' if x<0 else 'R'}"
-        tip.rotation_euler = (0, 0, math.radians(30 if x>0 else -30))
-        tip.data.materials.append(mats["Skin"])
-        shade_smooth(tip)
-        tip.parent = head
 
-    return head
+def bevel(obj, width=.025, segments=3):
+    mod = obj.modifiers.new("Bordi morbidi", "BEVEL")
+    mod.width = width
+    mod.segments = segments
+    mod.affect = 'EDGES'
+    mod.limit_method = 'ANGLE'
+    return obj
 
-def create_eyes(mats, parent):
-    # Occhi anime grandi
-    for x in [-0.35, 0.35]:
-        side = 'L' if x<0 else 'R'
-        # Sclera (bianco occhio) - forma ovale appiattita
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=0.28, location=(x, 0.84, 1.40))
-        eye_white = bpy.context.active_object
-        eye_white.name = f"EyeWhite_{side}"
-        eye_white.scale = (1.15, 0.35, 1.3)
-        bpy.ops.object.transform_apply(scale=True)
-        # Appiattiamo leggermente verso testa per integrazione
-        eye_white.data.materials.append(mats["EyeWhite"])
-        shade_smooth(eye_white)
-        eye_white.parent = parent
 
-        # Iride grande anime
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=0.19, location=(x, 0.96, 1.38))
-        iris = bpy.context.active_object
-        iris.name = f"Iris_{side}"
-        iris.scale = (1.0, 0.25, 1.0)
-        bpy.ops.object.transform_apply(scale=True)
-        iris.data.materials.append(mats["Iris"])
-        shade_smooth(iris)
-        iris.parent = parent
+def cylinder(name, location, radius, depth, mat, vertices=48, scale=(1, 1, 1), edge=.015):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=vertices, radius=radius, depth=depth, location=location)
+    obj = bpy.context.object
+    obj.scale = scale
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    finish(obj, name, mat)
+    if edge:
+        bevel(obj, edge)
+    return obj
 
-        # Pupilla
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.11, location=(x, 1.02, 1.38))
-        pupil = bpy.context.active_object
-        pupil.name = f"Pupil_{side}"
-        pupil.scale = (1.0, 0.2, 1.20)
-        bpy.ops.object.transform_apply(scale=True)
-        pupil.data.materials.append(mats["Pupil"])
-        shade_smooth(pupil)
-        pupil.parent = parent
 
-        # Highlight principale
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=0.055, location=(x-0.06, 1.06, 1.45))
-        hl1 = bpy.context.active_object
-        hl1.name = f"Highlight1_{side}"
-        hl1.scale = (1, 0.2, 1.0)
-        bpy.ops.object.transform_apply(scale=True)
-        hl1.data.materials.append(mats["EyeHighlight"])
-        hl1.parent = parent
+def between(name, a, b, radius, mat, radius_end=None, vertices=32, edge=.012):
+    a, b = Vector(a), Vector(b)
+    direction = b - a
+    bpy.ops.mesh.primitive_cone_add(vertices=vertices, radius1=radius,
+                                    radius2=radius if radius_end is None else radius_end,
+                                    depth=direction.length, location=(a + b) / 2)
+    obj = bpy.context.object
+    obj.rotation_mode = 'QUATERNION'
+    obj.rotation_quaternion = direction.to_track_quat('Z', 'Y')
+    finish(obj, name, mat)
+    if edge:
+        bevel(obj, edge)
+    return obj
 
-        # Highlight secondario piccolo
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=8, ring_count=6, radius=0.03, location=(x+0.07, 1.05, 1.32))
-        hl2 = bpy.context.active_object
-        hl2.name = f"Highlight2_{side}"
-        hl2.scale = (1, 0.2, 1.0)
-        bpy.ops.object.transform_apply(scale=True)
-        hl2.data.materials.append(mats["EyeHighlight"])
-        hl2.parent = parent
 
-    # Sopracciglia / contorno occhi (sottile)
-    for x in [-0.35, 0.35]:
-        side = 'L' if x<0 else 'R'
-        bpy.ops.mesh.primitive_torus_add(major_radius=0.28, minor_radius=0.02, major_segments=16, minor_segments=8, location=(x, 0.80, 1.55))
-        brow = bpy.context.active_object
-        brow.name = f"Brow_{side}"
-        brow.scale = (1.15, 0.35, 0.6)
-        brow.rotation_euler = (math.radians(85), 0, 0)
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-        brow.data.materials.append(mats["HairDark"])
-        brow.parent = parent
+def torus(name, location, major, minor, mat, scale=(1, 1, 1)):
+    bpy.ops.mesh.primitive_torus_add(major_segments=48, minor_segments=10,
+                                    location=location, major_radius=major, minor_radius=minor)
+    obj = bpy.context.object
+    obj.scale = scale
+    return finish(obj, name, mat)
 
-def create_hair(mats, parent):
-    # Capelli anime - caschetto voluminoso
-    # Base capelli superiore (calotta)
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=0.98, location=(0, 0, 1.70))
-    hair_top = bpy.context.active_object
-    hair_top.name = "Hair_Top"
-    hair_top.scale = (1.08, 1.05, 0.95)
-    bpy.ops.object.transform_apply(scale=True)
-    hair_top.data.materials.append(mats["Hair"])
-    shade_smooth(hair_top)
-    add_subsurf(hair_top, 1)
-    hair_top.parent = parent
 
-    # Frangia frontale - 3 ciocche principali
-    for i, (x, rot) in enumerate([(-0.35, -15), (0.0, 0), (0.35, 15)]):
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(x, 0.75, 1.62))
-        bangs = bpy.context.active_object
-        bangs.name = f"Hair_Bangs_{i}"
-        bangs.scale = (0.32, 0.18, 0.45)
-        bangs.rotation_euler = (math.radians(25), math.radians(rot), 0)
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-        # Bevel per ammorbidire
-        mod = bangs.modifiers.new("Bevel", "BEVEL")
-        mod.width = 0.08
-        mod.segments = 2
-        add_subsurf(bangs, 1)
-        bangs.data.materials.append(mats["Hair"])
-        shade_smooth(bangs)
-        bangs.parent = parent
+def mesh(name, verts, faces, mat, smooth=True):
+    data = bpy.data.meshes.new(name)
+    data.from_pydata(verts, [], faces)
+    data.update()
+    obj = bpy.data.objects.new(name, data)
+    bpy.context.collection.objects.link(obj)
+    return finish(obj, name, mat, smooth)
 
-    # Ciocche laterali lunghe (hime cut)
-    for x in [-0.75, 0.75]:
-        side = 'L' if x<0 else 'R'
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(x, 0.0, 1.15))
-        side_hair = bpy.context.active_object
-        side_hair.name = f"Hair_Side_{side}"
-        side_hair.scale = (0.28, 0.35, 1.0)
-        # Curva verso interno in basso
-        mod = side_hair.modifiers.new("Bevel", "BEVEL")
-        mod.width = 0.06
-        add_subsurf(side_hair, 1)
-        side_hair.data.materials.append(mats["Hair"])
-        shade_smooth(side_hair)
-        side_hair.parent = parent
 
-        # Codina laterale / ciocca dietro orecchio
-        bpy.ops.mesh.primitive_cone_add(radius1=0.12, depth=0.7, location=(x*1.08, -0.15, 1.05))
-        strand = bpy.context.active_object
-        strand.name = f"Hair_Strand_{side}"
-        strand.rotation_euler = (math.radians(-15), 0, 0)
-        strand.data.materials.append(mats["HairDark"])
-        shade_smooth(strand)
-        strand.parent = parent
+def line(name, points, radius, mat, cyclic=False, resolution=12):
+    data = bpy.data.curves.new(name, 'CURVE')
+    data.dimensions = '3D'
+    data.resolution_u = resolution
+    data.bevel_depth = radius
+    data.bevel_resolution = 3
+    data.use_fill_caps = True
+    spline = data.splines.new('BEZIER')
+    spline.bezier_points.add(len(points) - 1)
+    for point, co in zip(spline.bezier_points, points):
+        point.co = co
+        point.handle_left_type = 'AUTO'
+        point.handle_right_type = 'AUTO'
+    spline.use_cyclic_u = cyclic
+    obj = bpy.data.objects.new(name, data)
+    bpy.context.collection.objects.link(obj)
+    return finish(obj, name, mat)
 
-    # Ciuffo posteriore / coda bassa
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=0.45, location=(0, -0.85, 1.25))
-    hair_back = bpy.context.active_object
-    hair_back.name = "Hair_Back"
-    hair_back.scale = (1.1, 0.7, 1.2)
-    bpy.ops.object.transform_apply(scale=True)
-    hair_back.data.materials.append(mats["Hair"])
-    shade_smooth(hair_back)
-    hair_back.parent = parent
 
-    # Due codini bassi stile twin-tails chibi (opzionale)
-    for x in [-0.55, 0.55]:
-        side = 'L' if x<0 else 'R'
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.22, location=(x, -0.65, 1.0))
-        twin = bpy.context.active_object
-        twin.name = f"Hair_Twin_{side}"
-        twin.scale = (1, 0.9, 1.8)
-        bpy.ops.object.transform_apply(scale=True)
-        twin.data.materials.append(mats["Hair"])
-        shade_smooth(twin)
-        twin.parent = parent
+def slab(name, points, front, thickness, mat, edge=.01):
+    """Placca chiusa nel piano XZ, con il fronte rivolto verso -Y."""
+    points = list(points)
+    area = sum(points[i][0] * points[(i + 1) % len(points)][1]
+               - points[(i + 1) % len(points)][0] * points[i][1] for i in range(len(points)))
+    if area < 0:
+        points.reverse()
+    count = len(points)
+    verts = [(x, front, z) for x, z in points] + [(x, front + thickness, z) for x, z in points]
+    faces = [tuple(range(count)), tuple(reversed(range(count, 2 * count)))]
+    faces += [(i, i + count, (i + 1) % count + count, (i + 1) % count) for i in range(count)]
+    obj = mesh(name, verts, faces, mat, smooth=False)
+    if edge:
+        bevel(obj, edge, 3)
+    return obj
 
-        # Nastrino
-        bpy.ops.mesh.primitive_torus_add(major_radius=0.09, minor_radius=0.025, major_segments=12, minor_segments=6, location=(x, -0.55, 1.28))
-        ribbon = bpy.context.active_object
-        ribbon.name = f"Ribbon_{side}"
-        ribbon.rotation_euler = (math.radians(90), 0, 0)
-        ribbon.data.materials.append(mats["ArmorGold"])
-        ribbon.parent = parent
 
-    # Riflesso chiaro sulla sommità
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, radius=0.22, location=(0.25, 0.3, 2.15))
-    highlight = bpy.context.active_object
-    highlight.name = "Hair_Highlight"
-    highlight.scale = (1.5, 0.4, 0.6)
-    bpy.ops.object.transform_apply(scale=True)
-    highlight.data.materials.append(mats["HairLight"])
-    highlight.parent = parent
+def star(name, x, y, z, radius, mat, points=4, inner=.32, thickness=.025):
+    coords = []
+    for i in range(points * 2):
+        a = math.pi / 2 + i * math.pi / points
+        r = radius if i % 2 == 0 else radius * inner
+        coords.append((x + math.cos(a) * r, z + math.sin(a) * r))
+    return slab(name, coords, y, thickness, mat, .005)
 
-def create_body(mats):
-    # Corpo / Tunica
-    bpy.ops.mesh.primitive_cylinder_add(radius=0.45, depth=0.85, location=(0, 0, 0.55))
-    body = bpy.context.active_object
-    body.name = "Body"
-    body.scale = (1.0, 0.85, 1.0)
-    bpy.ops.object.transform_apply(scale=True)
-    body.data.materials.append(mats["Tunic"])
-    shade_smooth(body)
-    add_subsurf(body, 1)
 
-    # Cintura
-    bpy.ops.mesh.primitive_torus_add(major_radius=0.46, minor_radius=0.06, major_segments=20, minor_segments=8, location=(0, 0, 0.35))
-    belt = bpy.context.active_object
-    belt.name = "Belt"
-    belt.rotation_euler = (math.radians(90), 0, 0)
-    belt.scale = (1.0, 0.85, 1.0)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    belt.data.materials.append(mats["Boots"])
+def ring_body(name, sections, mat, steps=48):
+    """Superficie chiusa ottenuta da sezioni orizzontali ellittiche."""
+    verts, faces = [], []
+    for z, rx, ry, cy in sections:
+        for i in range(steps):
+            a = 2 * math.pi * i / steps
+            verts.append((rx * math.cos(a), cy + ry * math.sin(a), z))
+    for j in range(len(sections) - 1):
+        for i in range(steps):
+            k = (i + 1) % steps
+            faces.append((j * steps + i, j * steps + k, (j + 1) * steps + k, (j + 1) * steps + i))
+    faces.append(tuple(reversed(range(steps))))
+    faces.append(tuple((len(sections) - 1) * steps + i for i in range(steps)))
+    return mesh(name, verts, faces, mat)
 
-    # Fibbia cintura
-    bpy.ops.mesh.primitive_cube_add(size=0.2, location=(0, 0.42, 0.35))
-    buckle = bpy.context.active_object
-    buckle.name = "BeltBuckle"
-    buckle.scale = (0.7, 0.3, 0.7)
-    bpy.ops.object.transform_apply(scale=True)
-    buckle.data.materials.append(mats["ArmorGold"])
-    mod = buckle.modifiers.new("Bevel", "BEVEL")
-    mod.width = 0.02
 
-    # Spallacci armatura
-    for x in [-0.48, 0.48]:
-        side = 'L' if x<0 else 'R'
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.28, location=(x, 0, 0.80))
-        shoulder = bpy.context.active_object
-        shoulder.name = f"ShoulderPad_{side}"
-        shoulder.scale = (1.0, 0.85, 0.6)
-        bpy.ops.object.transform_apply(scale=True)
-        shoulder.data.materials.append(mats["Armor"])
-        shade_smooth(shoulder)
-        # Bordo dorato
-        bpy.ops.mesh.primitive_torus_add(major_radius=0.22, minor_radius=0.03, major_segments=16, minor_segments=6, location=(x, 0, 0.75))
-        rim = bpy.context.active_object
-        rim.name = f"ShoulderRim_{side}"
-        rim.rotation_euler = (math.radians(90), 0, 0)
-        rim.data.materials.append(mats["ArmorGold"])
+def hair_cap(mat):
+    """Calotta aperta sul viso, non una sfera che lo nasconde."""
+    rows, steps = 20, 64
+    center = (0, .03, 2.84)
+    rx, ry, rz = .93, .78, .98
+    verts = [(0, center[1], center[2] + rz)]
+    for j in range(1, rows + 1):
+        for i in range(steps):
+            phi = 2 * math.pi * i / steps
+            back = (math.sin(phi) + 1) / 2
+            limit = 1.16 + 1.12 * (back ** .75)
+            theta = limit * j / rows
+            verts.append((rx * math.sin(theta) * math.cos(phi),
+                          center[1] + ry * math.sin(theta) * math.sin(phi),
+                          center[2] + rz * math.cos(theta)))
+    faces = []
+    for i in range(steps):
+        faces.append((0, 1 + i, 1 + (i + 1) % steps))
+    for j in range(rows - 1):
+        for i in range(steps):
+            a = 1 + j * steps + i
+            b = 1 + j * steps + (i + 1) % steps
+            faces.append((a, a + steps, b + steps, b))
+    obj = mesh("Capelli_calotta", verts, faces, mat)
+    # La superficie ha spessore: si esporta anche il bordo inferiore.
+    solidify = obj.modifiers.new("Spessore", 'SOLIDIFY')
+    solidify.thickness = .035
+    return obj
 
-    # Mantellina corta
-    bpy.ops.mesh.primitive_cylinder_add(radius=0.55, depth=0.55, location=(0, -0.28, 0.55))
-    cape = bpy.context.active_object
-    cape.name = "Cape"
-    cape.scale = (1.0, 0.45, 1.0)
-    cape.rotation_euler = (math.radians(10), 0, 0)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    # Taglia metà davanti per effetto mantello
-    cape.data.materials.append(mats["Cape"])
-    shade_smooth(cape)
 
-    return body
+def strand(name, start, end, width, depth, mat, curve=0, back_cap=False):
+    """Ciocca affusolata con volume ellittico e punta chiusa."""
+    start, end = Vector(start), Vector(end)
+    rows, steps = 16, 16
+    verts, faces = [], []
+    for j in range(rows + 1):
+        t = j / rows
+        # Parte dalla calotta, si allarga e termina in una punta morbida.
+        center = start.lerp(end, t)
+        if back_cap:
+            # Le ciocche seguono la superficie della calotta invece di attraversarla.
+            radial = 1 - (center.x / .93) ** 2 - ((center.z - 2.84) / .98) ** 2
+            center.y = .03 + .78 * math.sqrt(max(.001, radial)) - .025
+        else:
+            center.y += curve * math.sin(math.pi * t)
+        profile = .025 + .975 * (math.sin(math.pi * t) ** .72) * (1 - .28 * t)
+        for i in range(steps):
+            a = 2 * math.pi * i / steps
+            verts.append((center.x + width * profile * math.cos(a),
+                          center.y + depth * profile * math.sin(a), center.z))
+    for j in range(rows):
+        for i in range(steps):
+            a = j * steps + i
+            b = j * steps + (i + 1) % steps
+            faces.append((a, a + steps, b + steps, b))
+    faces.append(tuple(range(steps)))
+    faces.append(tuple(reversed([rows * steps + i for i in range(steps)])))
+    return mesh(name, verts, faces, mat)
 
-def create_limbs(mats, body):
-    # Braccia
-    for x in [-0.62, 0.62]:
-        side = 'L' if x<0 else 'R'
-        # Braccio superiore
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.13, depth=0.45, location=(x, 0, 0.60))
-        arm = bpy.context.active_object
-        arm.name = f"Arm_{side}"
-        arm.rotation_euler = (0, 0, math.radians(-10 if x>0 else 10))
-        arm.data.materials.append(mats["Tunic"])
-        shade_smooth(arm)
 
-        # Guanto / mano chibi grande
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.19, location=(x*1.08, 0, 0.30))
-        hand = bpy.context.active_object
-        hand.name = f"Hand_{side}"
-        hand.scale = (1.0, 0.85, 1.0)
-        bpy.ops.object.transform_apply(scale=True)
-        hand.data.materials.append(mats["Gloves"])
-        shade_smooth(hand)
+def build_head(m):
+    sphere("Testa", (0, 0, 2.78), (.88, .70, .85), m["Skin"], 48, 32)
+    for side in (-1, 1):
+        label = 'S' if side < 0 else 'D'
+        # Piccole orecchie e riflesso caldo.
+        sphere(f"Orecchio_{label}", (side * .85, -.01, 2.69), (.12, .12, .20), m["Skin"])
+        sphere(f"Orecchio_interno_{label}", (side * .892, -.095, 2.69), (.045, .025, .11), m["SkinShadow"])
+        x = side * .32
+        # Diversi strati chiusi costruiscono un occhio anime senza texture esterne.
+        sphere(f"Occhio_contorno_{label}", (x, -.681, 2.78), (.234, .075, .281), m["EyeOutline"])
+        sphere(f"Occhio_bianco_{label}", (x, -.744, 2.765), (.218, .031, .257), m["EyeWhite"])
+        sphere(f"Iride_bordo_{label}", (x, -.768, 2.758), (.144, .027, .195), m["IrisDark"])
+        sphere(f"Iride_{label}", (x, -.789, 2.745), (.12, .022, .167), m["Iris"])
+        sphere(f"Iride_luce_{label}", (x, -.807, 2.68), (.09, .016, .065), m["IrisLight"])
+        sphere(f"Pupilla_{label}", (x, -.813, 2.793), (.069, .02, .115), m["Pupil"])
+        sphere(f"Riflesso_occhio_{label}", (x - .043, -.832, 2.854), (.043, .015, .048), m["Highlight"], 24, 16)
+        sphere(f"Riflesso_piccolo_{label}", (x + .048, -.826, 2.71), (.022, .012, .024), m["Highlight"], 20, 12)
+        # Palpebre e sopracciglia seguono la curvatura del viso.
+        line(f"Palpebra_{label}", [(x - .22, -.69, 2.87), (x - .16, -.705, 2.99),
+                                   (x, -.72, 3.04), (x + .16, -.705, 2.99),
+                                   (x + .22, -.69, 2.87)], .022, m["EyeOutline"])
+        line(f"Ciglia_{label}", [(x + side * .16, -.705, 2.99),
+                                (x + side * .25, -.67, 3.02)], .016, m["EyeOutline"])
+        line(f"Sopracciglio_{label}", [(x - .16, -.687, 3.135), (x, -.705, 3.17),
+                                       (x + .16, -.687, 3.145)], .013, m["HairShadow"])
+        sphere(f"Guancia_{label}", (side * .535, -.505, 2.48), (.078, .017, .032), m["Blush"], 24, 16)
+    sphere("Naso", (0, -.696, 2.57), (.032, .022, .024), m["SkinShadow"], 24, 16)
+    line("Sorriso", [(-.11, -.620, 2.385), (-.055, -.619, 2.365),
+                     (0, -.616, 2.358), (.055, -.619, 2.365), (.11, -.620, 2.385)],
+         .012, m["SkinShadow"])
 
-        # Dita stilizzate (3)
-        for j in range(3):
-            bpy.ops.mesh.primitive_uv_sphere_add(segments=8, ring_count=6, radius=0.06, location=(x*1.12 + (j-1)*0.07, 0.12, 0.28))
-            finger = bpy.context.active_object
-            finger.name = f"Finger_{side}_{j}"
-            finger.data.materials.append(mats["Gloves"])
-            finger.parent = hand
+    hair_cap(m["Hair"])
+    bangs = [
+        ((-.43, -.35, 3.57), (-.72, -.51, 3.15), .175, .082, "HairMid"),
+        ((-.28, -.32, 3.68), (-.48, -.65, 3.11), .18, .10, "Hair"),
+        ((-.12, -.30, 3.74), (-.22, -.70, 3.09), .19, .11, "HairLight"),
+        (( .05, -.30, 3.75), ( .06, -.72, 3.10), .19, .11, "Hair"),
+        (( .22, -.32, 3.69), ( .36, -.67, 3.11), .18, .105, "HairMid"),
+        (( .40, -.33, 3.60), ( .63, -.53, 3.16), .17, .085, "Hair"),
+    ]
+    for i, (a, b, width, depth, color) in enumerate(bangs):
+        strand(f"Frangia_{i + 1:02}", a, b, width, depth, m[color], curve=-.075)
+    for side in (-1, 1):
+        label = 'S' if side < 0 else 'D'
+        strand(f"Capelli_laterali_{label}", (side * .72, -.22, 3.40),
+               (side * .82, -.36, 2.20), .19, .12, m["Hair"], -.05)
+        strand(f"Ciocca_laterale_{label}", (side * .87, .02, 3.35),
+               (side * 1.01, -.05, 2.27), .15, .13, m["HairMid"], -.02)
+        strand(f"Ciocca_posteriore_{label}", (side * .73, .40, 3.38),
+               (side * .82, .48, 2.16), .16, .12, m["HairShadow"])
+    # Nervature posteriori della calotta per una silhouette leggibile anche da dietro.
+    for i, x in enumerate((-.63, -.42, -.21, 0, .21, .42, .63)):
+        strand(f"Capelli_retro_{i}", (x * .65, .48, 3.53),
+               (x, .58, 2.28 + .10 * abs(x)), .145, .07,
+               m["Hair"] if i % 2 else m["HairMid"], back_cap=True)
+    # Una piccola stella dorata identifica il guerriero dell'aurora.
+    star("Fermaglio_stella", .69, -.585, 3.31, .105, m["GoldLight"], inner=.28)
+    sphere("Fermaglio_gemma", (.69, -.59, 3.31), (.028, .014, .028), m["Iris"])
 
-    # Gambe
-    for x in [-0.22, 0.22]:
-        side = 'L' if x<0 else 'R'
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.16, depth=0.45, location=(x, 0, 0.05))
-        leg = bpy.context.active_object
-        leg.name = f"Leg_{side}"
-        leg.data.materials.append(mats["Tunic"])
-        shade_smooth(leg)
 
-        # Stivale
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.19, depth=0.30, location=(x, 0.05, -0.20))
-        boot = bpy.context.active_object
-        boot.name = f"Boot_{side}"
-        boot.data.materials.append(mats["Boots"])
-        shade_smooth(boot)
+def cape_point(u, t):
+    width = .50 + .52 * (t ** .72)
+    x = u * width
+    y = .34 + .18 * t + .035 * math.cos(u * math.pi * 3) * (t ** .7)
+    z = 1.75 - 1.30 * t + .09 * (abs(u) ** 2) * t
+    return (x, y, z)
 
-        # Suola
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(x, 0.05, -0.36))
-        sole = bpy.context.active_object
-        sole.name = f"Sole_{side}"
-        sole.scale = (0.28, 0.42, 0.06)
-        sole.data.materials.append(mats["Boots"])
-        mod = sole.modifiers.new("Bevel", "BEVEL")
-        mod.width = 0.02
 
-def create_sword(mats):
-    # Spada chibi sovradimensionata
-    # Lama
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0.75, 0, 0.45))
-    blade = bpy.context.active_object
-    blade.name = "Sword_Blade"
-    blade.scale = (0.12, 0.03, 1.2)
-    bpy.ops.object.transform_apply(scale=True)
-    mod = blade.modifiers.new("Bevel", "BEVEL")
-    mod.width = 0.02
-    blade.data.materials.append(mats["SwordBlade"])
-    # Punta
-    bpy.ops.mesh.primitive_cone_add(radius1=0.12, depth=0.25, location=(0.75, 0, 1.15))
-    tip = bpy.context.active_object
-    tip.name = "Sword_Tip"
-    tip.scale = (1, 0.25, 1)
-    tip.rotation_euler = (0, 0, 0)
-    tip.data.materials.append(mats["SwordBlade"])
-    # Elimina congiunzione via parent
-    tip.parent = blade
+def build_cape(m):
+    cols, rows = 32, 18
+    verts, faces = [], []
+    for j in range(rows + 1):
+        for i in range(cols + 1):
+            verts.append(cape_point(-1 + 2 * i / cols, j / rows))
+    for j in range(rows):
+        for i in range(cols):
+            a = j * (cols + 1) + i
+            faces.append((a, a + 1, a + cols + 2, a + cols + 1))
+    obj = mesh("Mantello", verts, faces, m["Cape"])
+    solidify = obj.modifiers.new("Spessore stoffa", 'SOLIDIFY')
+    solidify.thickness = .045
+    subdiv = obj.modifiers.new("Pieghe morbide", 'SUBSURF')
+    subdiv.levels = 1
+    for side in (-1, 1):
+        points = [cape_point(side * .985, t) for t in (.08, .3, .55, .8, 1)]
+        line(f"Mantello_bordo_{side}", [(x, y - .025, z) for x, y, z in points], .022, m["Gold"])
+    points = [cape_point(u, .99) for u in (-1, -.7, -.4, 0, .4, .7, 1)]
+    line("Mantello_bordo_inferiore", [(x, y, z + .015) for x, y, z in points], .026, m["Gold"])
+    line("Mantello_bordo_retro", [(x, y + .025, z + .015) for x, y, z in points], .026, m["Gold"])
+    # Emblema sul retro, visibile ruotando il modello.
+    # Il dorso è rivolto verso +Y, quindi la placca viene appoggiata a quella superficie.
+    star("Stella_mantello", 0, .505, .79, .12, m["GoldLight"], inner=.35, thickness=.025)
 
-    # Guardia
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0.75, 0, -0.15))
-    guard = bpy.context.active_object
-    guard.name = "Sword_Guard"
-    guard.scale = (0.22, 0.08, 0.06)
-    guard.data.materials.append(mats["ArmorGold"])
-    guard.parent = blade
 
-    # Impugnatura
-    bpy.ops.mesh.primitive_cylinder_add(radius=0.05, depth=0.30, location=(0.75, 0, -0.30))
-    handle = bpy.context.active_object
-    handle.name = "Sword_Handle"
-    handle.data.materials.append(mats["SwordHandle"])
-    handle.parent = blade
+def build_body(m):
+    build_cape(m)
+    # Stivali e gambe, con suola, punta e bordi metallici.
+    for side in (-1, 1):
+        label = 'S' if side < 0 else 'D'
+        x = side * .285
+        sphere(f"Gamba_{label}", (x, .01, .97), (.16, .16, .25), m["Skin"])
+        sphere(f"Stivale_{label}", (x, .005, .62), (.19, .19, .32), m["Armor"])
+        sphere(f"Punta_stivale_{label}", (x, -.115, .405), (.205, .28, .125), m["Ivory"])
+        sphere(f"Suola_{label}", (x, -.11, .335), (.21, .28, .065), m["BaseShadow"])
+        torus(f"Bordo_stivale_{label}", (x, .005, .87), .172, .021, m["Gold"], scale=(1, .98, 1))
+        line(f"Decoro_stivale_{label}", [(x - .14, -.145, .66), (x, -.20, .59),
+                                         (x + .14, -.145, .66)], .017, m["Gold"])
+    # Gonnellino e corpo, entrambi chiusi e stondati.
+    ring_body("Tunica_inferiore", [(.78, .43, .29, 0), (.88, .46, .30, 0),
+                                   (1.15, .38, .27, 0), (1.28, .35, .25, 0)], m["Ivory"])
+    ring_body("Corpetto", [(1.13, .35, .26, 0), (1.26, .39, .28, 0),
+                            (1.62, .43, .29, 0), (1.78, .34, .25, 0)], m["Armor"])
+    # Sopragonna sagomata con bordatura oro e interno chiaro.
+    slab("Tabarro_bordo", [(-.22, 1.13), (-.27, .91), (0, .76), (.27, .91), (.22, 1.13)], -.315, .045, m["Gold"])
+    slab("Tabarro", [(-.175, 1.09), (-.216, .93), (0, .82), (.216, .93), (.175, 1.09)], -.336, .035, m["Ivory"])
+    for side in (-1, 1):
+        coords = [(side * .26, 1.14), (side * .39, 1.10), (side * .47, .89),
+                  (side * .33, .94)]
+        if side < 0:
+            coords.reverse()
+        slab(f"Faldestra_{side}", coords, -.255, .14, m["Gold"])
+        coords = [(side * .29, 1.10), (side * .37, 1.07), (side * .42, .94),
+                  (side * .34, .97)]
+        if side < 0:
+            coords.reverse()
+        slab(f"Faldestra_interno_{side}", coords, -.28, .04, m["CapeLight"])
+    # Pettorale a più livelli, incorniciato e con gemma.
+    slab("Pettorale_bordo", [(-.36, 1.72), (-.40, 1.54), (-.34, 1.36),
+                              (0, 1.27), (.34, 1.36), (.40, 1.54), (.36, 1.72),
+                              (.23, 1.79), (-.23, 1.79)], -.30, .09, m["Gold"], .025)
+    slab("Pettorale", [(-.32, 1.69), (-.35, 1.54), (-.30, 1.40),
+                        (0, 1.32), (.30, 1.40), (.35, 1.54), (.32, 1.69),
+                        (.20, 1.74), (-.20, 1.74)], -.337, .055, m["Ivory"], .025)
+    star("Gemma_pettorale_bordo", 0, -.355, 1.55, .085, m["Gold"], inner=.6, thickness=.04)
+    sphere("Gemma_pettorale", (0, -.375, 1.55), (.038, .022, .055), m["Iris"])
+    # Cintura ellittica e fibbia.
+    cylinder("Cintura", (0, 0, 1.18), 1, .105, m["Leather"], scale=(.395, .29, 1), edge=.02)
+    slab("Fibbia", [(-.105, 1.23), (-.105, 1.12), (.105, 1.12), (.105, 1.23)], -.315, .055, m["Gold"], .015)
+    slab("Fibbia_interno", [(-.055, 1.208), (-.055, 1.145), (.055, 1.145), (.055, 1.208)], -.335, .025, m["Cape"], .008)
+    # Collo e mantellina / sciarpa.
+    cylinder("Collo", (0, 0, 1.87), .22, .22, m["Skin"], edge=.025)
+    torus("Colletto_blu", (0, 0, 1.81), .30, .105, m["Cape"], scale=(1.25, .95, .78))
+    sphere("Fermaglio_colletto", (-.22, -.278, 1.81), (.07, .035, .07), m["Gold"])
+    sphere("Gemma_colletto", (-.22, -.315, 1.81), (.032, .02, .032), m["IrisLight"])
+    for side in (-1, 1):
+        label = 'S' if side < 0 else 'D'
+        sphere(f"Spallaccio_{label}", (side * .52, -.01, 1.67), (.27, .24, .17), m["Armor"])
+        line(f"Spallaccio_bordo_{label}", [(side * .31, -.155, 1.67), (side * .49, -.23, 1.58),
+                                           (side * .68, -.14, 1.62)], .024, m["Gold"])
+        between(f"Braccio_{label}", (side * .56, 0, 1.57), (side * .72, -.05, 1.32), .13, m["Skin"], .115)
+        between(f"Manica_{label}", (side * .56, 0, 1.59), (side * .67, -.035, 1.41), .145, m["Ivory"], .14)
+        between(f"Bracciale_{label}", (side * .71, -.05, 1.37), (side * .86, -.14, 1.14), .15, m["Armor"], .125)
+        between(f"Polsino_oro_{label}", (side * .83, -.12, 1.20), (side * .87, -.145, 1.13), .144, m["Gold"], .13)
+        sphere(f"Guanto_{label}", (side * .91, -.17, 1.10), (.14, .13, .145), m["Leather"])
+        sphere(f"Pollice_{label}", (side * .81, -.255, 1.10), (.066, .06, .08), m["Leather"], 24, 16)
 
-    # Pomolo
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.07, location=(0.75, 0, -0.45))
-    pommel = bpy.context.active_object
-    pommel.name = "Sword_Pommel"
-    pommel.data.materials.append(mats["ArmorGold"])
-    pommel.parent = blade
 
-    # Inclinazione per pose carina
-    blade.rotation_euler = (math.radians(10), math.radians(5), math.radians(8))
+def blade_mesh(name, start, tip, width, mat1, mat2):
+    a, b = Vector(start), Vector(tip)
+    axis = b - a
+    perpendicular = Vector((-axis.z, 0, axis.x)).normalized()
+    # Coppie di spigoli e nervature formano quattro facce affilate.
+    verts = []
+    for t, w in ((0, width), (.75, width * .86)):
+        p = a.lerp(b, t)
+        verts += [tuple(p + perpendicular * w), (p.x, p.y - .045, p.z),
+                  tuple(p - perpendicular * w), (p.x, p.y + .045, p.z)]
+    verts.append(tuple(b))
+    faces = [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7),
+             (4, 5, 8), (5, 6, 8), (6, 7, 8), (7, 4, 8), (3, 2, 1, 0)]
+    obj = mesh(name, verts, faces, mat1, smooth=False)
+    obj.data.materials.append(mat2)
+    for i, poly in enumerate(obj.data.polygons):
+        poly.material_index = 1 if i in (1, 5) else 0
+    return axis.normalized(), perpendicular
 
-    # Mano destra che tiene (collega)
-    return blade
 
-def create_base(mats):
-    # Base espositiva esagonale
-    bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.95, depth=0.12, location=(0, 0, -0.45))
-    base = bpy.context.active_object
-    base.name = "Base_Platform"
-    base.data.materials.append(mats["Base"])
-    shade_smooth(base)
-    # Bordo scuro
-    bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.98, depth=0.04, location=(0, 0, -0.48))
-    rim = bpy.context.active_object
-    rim.name = "Base_Rim"
-    rim.data.materials.append(mats["BaseDark"])
-    # Effetto erba / dettagli
-    for i in range(3):
-        angle = i * 120
-        rad = 0.6
-        x = math.cos(math.radians(angle)) * rad
-        y = math.sin(math.radians(angle)) * rad
-        bpy.ops.mesh.primitive_icosphere_add(subdivisions=1, radius=0.08, location=(x, y, -0.38))
-        rock = bpy.context.active_object
-        rock.name = f"Base_Rock_{i}"
-        rock.data.materials.append(mats["BaseDark"])
-        rock.scale = (1, 0.8, 0.6)
+def build_sword(m):
+    guard = Vector((-1.08, -.18, 1.04))
+    tip = Vector((-1.68, -.18, .36))
+    axis, perpendicular = blade_mesh("Spada_lama", guard, tip, .112, m["Blade"], m["BladeLight"])
+    handle_end = guard - axis * .35
+    between("Spada_impugnatura", guard, handle_end, .055, m["Leather"], .048, edge=.008)
+    sphere("Spada_pomo", handle_end, (.073, .073, .073), m["Gold"])
+    # Traversino e gemma al centro della guardia.
+    a, b = guard - perpendicular * .22, guard + perpendicular * .22
+    between("Spada_guardia", a, b, .045, m["Gold"], edge=.01)
+    sphere("Spada_guardia_sx", a, (.055, .055, .055), m["Gold"])
+    sphere("Spada_guardia_dx", b, (.055, .055, .055), m["Gold"])
+    sphere("Spada_gemma", (guard.x, guard.y - .056, guard.z), (.065, .027, .065), m["Iris"])
+    # Un sottile solco azzurro evidenzia la sfaccettatura della lama.
+    p1, p2 = guard.lerp(tip, .17), guard.lerp(tip, .78)
+    line("Spada_riflesso", [(p1.x, p1.y - .048, p1.z), (p2.x, p2.y - .04, p2.z)], .012, m["BladeBlue"])
 
-    # Nome inciso (testo 3D)
-    bpy.ops.object.text_add(location=(0, 0.75, -0.39))
-    text = bpy.context.active_object
-    text.name = "Base_Text"
-    text.data.body = "HOSHINO"
-    text.data.align_x = 'CENTER'
-    text.data.align_y = 'CENTER'
-    text.data.extrude = 0.015
-    text.scale = (0.18, 0.18, 0.18)
-    text.rotation_euler = (math.radians(90), 0, 0)
-    mat_text = new_material("TextMat", (0.18, 0.28, 0.65, 1.0), roughness=0.7)
-    text.data.materials.append(mat_text)
 
-def setup_environment():
-    # World light
-    world = bpy.data.worlds['World']
+def build_base(m):
+    # I tre gradini esagonali hanno veri bordi smussati.
+    for name, z, radius, depth, mat, edge in [
+        ("Base_inferiore", .075, 1.13, .15, "BaseShadow", .025),
+        ("Base_fascia", .155, 1.15, .065, "Gold", .012),
+        ("Base_superiore", .235, 1.12, .13, "Base", .025),
+        ("Base_piano", .305, 1.055, .025, "BaseTop", .008),
+    ]:
+        obj = cylinder(name, (0, 0, z), radius, depth, m[mat], vertices=6, edge=edge)
+        obj.rotation_euler[2] = math.radians(30)
+    # Piccola placca centrale: il testo è geometria, non una texture.
+    data = bpy.data.curves.new("Nome_Hoshino", 'FONT')
+    data.body = "HOSHINO"
+    data.align_x = 'CENTER'
+    data.size = .12
+    data.extrude = .004
+    text = bpy.data.objects.new("Nome_Hoshino", data)
+    bpy.context.collection.objects.link(text)
+    # In rilievo sul piano, con una piccola intersezione per la stampa.
+    text.location = (0, -.78, .315)
+    data.materials.append(m["Gold"])
+
+
+def convert_model_objects(collection):
+    # Curve e testo diventano mesh: GLB, OBJ e STL condividono gli stessi dettagli.
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in list(collection.objects):
+        if obj.type in {'MESH', 'CURVE', 'FONT'}:
+            obj.select_set(True)
+    bpy.context.view_layer.objects.active = next(obj for obj in collection.objects if obj.select_get())
+    bpy.ops.object.convert(target='MESH')
+    return [obj for obj in collection.objects if obj.type == 'MESH']
+
+
+def set_render_scene(m):
+    stage = bpy.data.collections.new("STUDIO (escluso dagli export)")
+    bpy.context.scene.collection.children.link(stage)
+    set_active_collection(stage)
+    bpy.ops.mesh.primitive_plane_add(size=200, location=(0, 0, -.012))
+    finish(bpy.context.object, "Studio_pavimento", m["Floor"], smooth=False)
+    world = bpy.data.worlds.new("Studio_aurora") if not bpy.data.worlds else bpy.data.worlds[0]
+    bpy.context.scene.world = world
     world.use_nodes = True
-    bg = world.node_tree.nodes.get('Background')
-    if bg:
-        bg.inputs[0].default_value = (0.95, 0.96, 0.99, 1.0)
-        bg.inputs[1].default_value = 1.0
-
-    # Camera
-    bpy.ops.object.camera_add(location=(2.2, -3.2, 1.3), rotation=(math.radians(75), 0, math.radians(35)))
-    cam = bpy.context.active_object
-    cam.name = "Camera_Main"
-    bpy.context.scene.camera = cam
-    cam.data.lens = 50
-    cam.data.dof.use_dof = False
-
-    # Tre luci studio
-    # Key light
-    bpy.ops.object.light_add(type='SUN', location=(3, -3, 4))
-    sun = bpy.context.active_object
-    sun.name = "Sun_Key"
-    sun.data.energy = 6.0
-    sun.data.color = (1.0, 0.98, 0.95)
-    sun.rotation_euler = (math.radians(45), math.radians(15), math.radians(30))
-
-    # Fill
-    bpy.ops.object.light_add(type='SUN', location=(-2, -2, 3))
-    fill = bpy.context.active_object
-    fill.name = "Sun_Fill"
-    fill.data.energy = 2.5
-    fill.data.color = (0.75, 0.85, 1.0)
-
-    # Rim light
-    bpy.ops.object.light_add(type='SUN', location=(0, 3, 2))
-    rim = bpy.context.active_object
-    rim.name = "Sun_Rim"
-    rim.data.energy = 3.0
-    rim.data.color = (1.0, 1.0, 1.0)
-
-    # Ground shadow catcher
-    bpy.ops.mesh.primitive_plane_add(size=10, location=(0, 0, -0.52))
-    ground = bpy.context.active_object
-    ground.name = "Ground_Shadow"
-    mat_ground = bpy.data.materials.new("GroundMat")
-    mat_ground.use_nodes = True
-    nodes = mat_ground.node_tree.nodes
-    nodes.clear()
-    out = nodes.new("ShaderNodeOutputMaterial")
-    princ = nodes.new("ShaderNodeBsdfDiffuse")
-    princ.inputs["Color"].default_value = (0.95, 0.95, 0.96, 1.0)
-    mat_ground.node_tree.links.new(princ.outputs["BSDF"], out.inputs["Surface"])
-    ground.data.materials.append(mat_ground)
-    ground.is_shadow_catcher = True if hasattr(ground, "is_shadow_catcher") else False
-
-def setup_render():
+    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.72, .82, .9, 1)
+    world.node_tree.nodes["Background"].inputs["Strength"].default_value = .45
+    def light(name, location, energy, size, target):
+        bpy.ops.object.light_add(type='AREA', location=location)
+        obj = bpy.context.object
+        obj.name = name
+        obj.data.energy = energy
+        obj.data.shape = 'DISK'
+        obj.data.size = size
+        obj.rotation_euler = (Vector(target) - obj.location).to_track_quat('-Z', 'Y').to_euler()
+    light("Studio_key", (-3.8, -5.5, 7), 520, 5.0, (0, 0, 2))
+    light("Studio_fill", (4.2, -3.0, 4.5), 280, 4.0, (0, 0, 2))
+    light("Studio_rim", (1.0, 4.0, 6), 700, 3.5, (0, 0, 2))
+    bpy.ops.object.camera_add(location=(2.1, -9.5, 4.5))
+    camera = bpy.context.object
+    camera.name = "Camera_studio"
+    camera.rotation_euler = (Vector((-.08, 0, 1.92)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+    camera.data.type = 'ORTHO'
+    camera.data.ortho_scale = 4.65
+    bpy.context.scene.camera = camera
     scene = bpy.context.scene
-    scene.render.engine = 'BLENDER_EEVEE' if 'BLENDER_EEVEE' in bpy.context.preferences.addons else 'CYCLES'
-    # Tenta EEVEE, fallback CYCLES
-    try:
-        scene.render.engine = 'BLENDER_EEVEE_NEXT' if bpy.app.version >= (4,2,0) else 'BLENDER_EEVEE'
-    except:
-        try:
-            scene.render.engine = 'BLENDER_EEVEE'
-        except:
-            scene.render.engine = 'CYCLES'
-
-    scene.render.resolution_x = 2048
-    scene.render.resolution_y = 2048
+    scene.render.engine = 'CYCLES'
+    scene.cycles.samples = 32
+    scene.cycles.use_denoising = True
+    scene.render.resolution_x = 1100
+    scene.render.resolution_y = 1100
     scene.render.resolution_percentage = 100
-    scene.render.film_transparent = True
-    scene.display_settings.display_device = 'sRGB'
-    # EEVEE settings
-    if 'EEVEE' in scene.render.engine:
-        scene.eevee.taa_render_samples = 64
-        try:
-            scene.eevee.use_soft_shadows = True
-            scene.eevee.use_bloom = True
-            scene.eevee.bloom_intensity = 0.15
-            scene.eevee.bloom_threshold = 1.0
-        except:
-            pass
-    else:
-        scene.cycles.samples = 128
+    scene.render.image_settings.file_format = 'PNG'
+    scene.view_settings.view_transform = 'AgX'
+    return camera
 
-def build_character():
-    clear_scene()
-    mats = create_materials()
-    head = create_head(mats)
-    create_eyes(mats, head)
-    create_hair(mats, head)
-    body = create_body(mats)
-    create_limbs(mats, body)
-    create_sword(mats)
-    create_base(mats)
-    setup_environment()
-    setup_render()
-    # Parent head to body for unity
-    head.parent = body
-    # Seleziona tutto per vista
-    bpy.ops.object.select_all(action='SELECT')
-    print("✓ Personaggio Hoshino creato con successo!")
+
+def select_model(objects):
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in objects:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = objects[0]
+
+
+def model_height(objects):
+    bpy.context.view_layer.update()
+    zs = [(obj.matrix_world @ Vector(corner)).z for obj in objects for corner in obj.bound_box]
+    return max(zs) - min(zs)
+
+
+def export_model(objects):
+    exports = ROOT / "exports"
+    exports.mkdir(exist_ok=True)
+    select_model(objects)
+    glb = exports / "Hoshino_Chibi.glb"
+    bpy.ops.export_scene.gltf(filepath=str(glb), export_format='GLB', use_selection=True,
+                              export_apply=True, export_yup=True)
+    select_model(objects)
+    bpy.ops.wm.obj_export(filepath=str(exports / "Hoshino_Chibi.obj"),
+                          export_selected_objects=True, export_materials=True,
+                          apply_modifiers=True, forward_axis='NEGATIVE_Y', up_axis='Z')
+    select_model(objects)
+    height = model_height(objects)
+    bpy.ops.wm.stl_export(filepath=str(exports / "Hoshino_Chibi.stl"),
+                          export_selected_objects=True, apply_modifiers=True,
+                          global_scale=80.0 / height, forward_axis='Y', up_axis='Z')
+    # OBJ e MTL devono essere distribuiti insieme per mantenere i materiali.
+    with zipfile.ZipFile(exports / "Hoshino_Chibi_OBJ.zip", 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name in ("Hoshino_Chibi.obj", "Hoshino_Chibi.mtl"):
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, (exports / name).read_bytes())
+    for obj in objects:
+        obj.data.calc_loop_triangles()
+    triangles = sum(len(obj.data.loop_triangles) for obj in objects)
+    materials = sorted({slot.material.name for obj in objects for slot in obj.material_slots if slot.material})
+    info = {
+        "name": "Hoshino - Chibi Guerriero dell'Aurora",
+        "version": 2,
+        "style": "Anime chibi, statuetta dell'aurora",
+        "meshes": len(objects),
+        "triangles": triangles,
+        "materials": materials,
+        "height_blender_units": round(height, 4),
+        "height_mm_print": 80,
+        "rig": "Modello statico, non riggato.",
+        "exports": {
+            "blend": "exports/Hoshino_Chibi.blend",
+            "glb": "exports/Hoshino_Chibi.glb",
+            "obj": "exports/Hoshino_Chibi.obj",
+            "mtl": "exports/Hoshino_Chibi.mtl",
+            "obj_zip": "exports/Hoshino_Chibi_OBJ.zip",
+            "stl": "exports/Hoshino_Chibi.stl"
+        },
+        "print_note": "Dopo l'export Blender, unire i volumi con scripts/prepare_stl.py e verificare supporti e spessori nello slicer."
+    }
+    (ROOT / "character_info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    print(f"Modello: {len(objects)} oggetti, {triangles} triangoli, altezza Blender {height:.3f}; STL scalato a 80 mm")
+
+
+def render_model(quick=False):
+    renders = ROOT / "renders"
+    renders.mkdir(exist_ok=True)
+    scene = bpy.context.scene
+    if quick:
+        scene.cycles.samples = 16
+        scene.render.resolution_x = 700
+        scene.render.resolution_y = 700
+    scene.render.filepath = str(renders / "model_preview.png")
+    bpy.ops.render.render(write_still=True)
+    # Una seconda vista proviene dalla stessa scena e dagli stessi file 3D.
+    camera = scene.camera
+    camera.location = (2.4, 9.5, 4.2)
+    camera.rotation_euler = (Vector((0, 0, 1.92)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+    scene.render.filepath = str(renders / "model_back.png")
+    bpy.ops.render.render(write_still=True)
+    camera.location = (2.1, -9.5, 4.5)
+    camera.rotation_euler = (Vector((-.08, 0, 1.92)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+    scene.render.filepath = str(renders / "model_preview.png")
+
 
 def main():
-    build_character()
-    # Paths
-    root = Path(__file__).resolve().parents[1]
-    blend_path = root / "Hoshino_Chibi.blend"
-    bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-    print(f"✓ Salvato .blend in {blend_path}")
+    parser = argparse.ArgumentParser(description="Crea Hoshino chibi in Blender.")
+    parser.add_argument('--export', action='store_true', help='Rigenera GLB, OBJ/MTL e STL')
+    parser.add_argument('--render', action='store_true', help='Genera due render reali del modello')
+    parser.add_argument('--save-blend', action='store_true', help='Salva la scena modificabile in exports/')
+    parser.add_argument('--quick', action='store_true', help='Render di prova più veloce')
+    if '--' in sys.argv:
+        args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
+    elif Path(sys.argv[0]).name == 'create_character.py':
+        # Esecuzione con il modulo bpy in Python, invece del binario Blender.
+        args = parser.parse_args(sys.argv[1:])
+    else:
+        # Blender passa i propri argomenti in sys.argv; non sono opzioni dello script.
+        args = parser.parse_args([])
 
-    # Export
-    exports = root / "exports"
-    exports.mkdir(exist_ok=True)
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    model = bpy.data.collections.new("HOSHINO - modello")
+    bpy.context.scene.collection.children.link(model)
+    set_active_collection(model)
+    mats = make_materials()
+    build_base(mats)
+    build_body(mats)
+    build_head(mats)
+    build_sword(mats)
+    objects = convert_model_objects(model)
+    set_render_scene(mats)
+    if args.export:
+        export_model(objects)
+    if args.render:
+        render_model(args.quick)
+    if args.save_blend:
+        (ROOT / 'exports').mkdir(exist_ok=True)
+        # Percorso relativo al .blend, trasferibile su un'altra macchina.
+        bpy.context.scene.render.filepath = '//../renders/model_preview.png'
+        bpy.ops.wm.save_as_mainfile(filepath=str(ROOT / 'exports' / 'Hoshino_Chibi.blend'), compress=True)
+    print("Hoshino è pronto.")
 
-    # Seleziona solo mesh per export
-    bpy.ops.object.select_all(action='SELECT')
-    # FBX
-    fbx_path = exports / "Hoshino_Chibi.fbx"
-    try:
-        bpy.ops.export_scene.fbx(filepath=str(fbx_path), apply_scale_options='FBX_SCALE_ALL', use_selection=True, object_types={'MESH','ARMATURE'})
-        print(f"✓ FBX esportato: {fbx_path}")
-    except Exception as e:
-        print(f"⚠ FBX errore: {e}")
 
-    # glTF / GLB
-    glb_path = exports / "Hoshino_Chibi.glb"
-    try:
-        bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format='GLB')
-        print(f"✓ GLB esportato: {glb_path}")
-    except Exception as e:
-        print(f"⚠ GLB errore: {e}")
-
-    # OBJ
-    obj_path = exports / "Hoshino_Chibi.obj"
-    try:
-        bpy.ops.wm.obj_export(filepath=str(obj_path), export_selected_objects=True, apply_modifiers=True)
-        print(f"✓ OBJ esportato: {obj_path}")
-    except:
-        try:
-            bpy.ops.export_scene.obj(filepath=str(obj_path), use_selection=True)
-            print(f"✓ OBJ esportato (legacy): {obj_path}")
-        except Exception as e:
-            print(f"⚠ OBJ errore: {e}")
-
-    # STL per stampa 3D
-    stl_path = exports / "Hoshino_Chibi.stl"
-    try:
-        bpy.ops.wm.stl_export(filepath=str(stl_path), export_selected_objects=True, apply_modifiers=True)
-        print(f"✓ STL esportato: {stl_path}")
-    except:
-        try:
-            bpy.ops.export_mesh.stl(filepath=str(stl_path), use_selection=True)
-            print(f"✓ STL esportato (legacy): {stl_path}")
-        except Exception as e:
-            print(f"⚠ STL errore: {e}")
-
-    # Render preview
-    renders = root / "renders"
-    renders.mkdir(exist_ok=True)
-    render_path = renders / "preview.png"
-    bpy.context.scene.render.filepath = str(render_path)
-    # Assicurati camera attiva
-    for obj in bpy.data.objects:
-        if obj.type == 'CAMERA':
-            bpy.context.scene.camera = obj
-            break
-    try:
-        bpy.ops.render.render(write_still=True)
-        print(f"✓ Render salvato: {render_path}")
-    except Exception as e:
-        print(f"⚠ Render errore: {e}")
-
-    # Render vista extra - close up volto
-    try:
-        cam = bpy.context.scene.camera
-        cam.location = (0.4, -1.5, 1.45)
-        cam.rotation_euler = (math.radians(78), 0, 0)
-        bpy.context.scene.render.filepath = str(renders / "preview_closeup.png")
-        bpy.ops.render.render(write_still=True)
-        print(f"✓ Closeup salvato")
-        # Ripristina
-        cam.location = (2.2, -3.2, 1.3)
-        cam.rotation_euler = (math.radians(75), 0, math.radians(35))
-    except Exception as e:
-        print(f"⚠ Closeup errore: {e}")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

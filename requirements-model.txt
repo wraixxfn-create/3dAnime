@@ -1,0 +1,5 @@
+# Solo per unire e verificare lo STL generato da Blender.
+numpy>=1.24,<3
+scipy>=1.10,<2
+trimesh>=4.5,<6
+manifold3d>=3,<4

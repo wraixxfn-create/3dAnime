@@ -1,28 +1,20 @@
-Hoshino_Chibi.blend — ISTRUZIONI
+HOSHINO CHIBI — SCENA BLENDER
 
-Questo file .blend viene GENERATO eseguendo lo script Blender.
+La scena modificabile è già inclusa:
+  exports/Hoshino_Chibi.blend
 
-Perché non è incluso come binario?
-- Il progetto è pensato per essere leggero e riproducibile.
-- Lo script `scripts/create_character.py` è la SORGENTE del modellino.
-- Eseguendolo, ottieni un .blend completo con luci, camera e render.
+Aprila con Blender 4.2 o successivo. La collezione "HOSHINO - modello"
+contiene il personaggio; "STUDIO" contiene camera, luci e pavimento.
+Il modello è statico e non riggato.
 
-COME GENERARE IL .blend:
+Per ricostruirlo da zero, apri scripts/create_character.py nel Text Editor
+ed esegui Run Script. Attenzione: lo script sostituisce la scena corrente.
+Senza opzioni crea la scena ma non salva né esporta automaticamente.
 
-1. Scarica e apri Blender (https://www.blender.org/download/)
-2. Apri questo progetto (cartella 3dAnime)
-3. In Blender: Text Editor → Open → scripts/create_character.py → Run Script ▶
-4. Il modello appare in 3D Viewport
-5. File → Save As → Hoshino_Chibi.blend (verrà salvato nella root del progetto)
+GLB, OBJ/MTL, ZIP OBJ e STL sono in exports/. Lo STL è un volume unico alto
+80 mm: verifica spessori e supporti nello slicer prima di stampare.
 
-In alternativa, importa il GLB già esportato:
-  File → Import → glTF 2.0 → exports/Hoshino_Chibi.glb
+I nuovi render della scena sono renders/model_preview.png e model_back.png.
+Le vecchie immagini preview.png e turnaround.png sono solo concept.
 
-GLI EXPORT SONO GIÀ PRONTI:
-- exports/Hoshino_Chibi.glb (133 KB) — per web/giochi
-- exports/Hoshino_Chibi.obj (375 KB) — per Blender/Maya
-- exports/Hoshino_Chibi.stl (537 KB) — per stampa 3D
-
-Per domande, leggi docs/BLENDER_GUIDA.md
-
-— 3dAnime Team
+Per altri dettagli: README.md, docs/BLENDER_GUIDA.md e docs/STAMPA_3D.md.
